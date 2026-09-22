@@ -1,0 +1,32 @@
+[llm]
+# Primary endpoint (Architecture Agent)
+base_url = "http://localhost:11434/v1"
+model = "openai/qwen3.6:35b-a3b"
+api_key = "local-llm"
+temperature = 0.3
+max_tokens = 4096
+timeout = 120
+
+[llm.secondary]
+# Secondary endpoint (Implementation Workers)
+base_url = "http://localhost:1234/v1"
+model = "openai/qwen3.6:35b-a3b"
+api_key = "local-llm"
+
+[agent]
+default_role = "architect"
+sandbox_type = "docker"
+workspace_base = "./workspace"
+
+[security]
+confirm_before_command_execution = true
+confirm_before_file_edit = true
+
+[workflow]
+auto_commit = false
+commit_message_template = "[openhands] {task_description}"
+
+[context]
+max_context_tokens = 28000
+summary_threshold_tokens = 25000
+artifact_storage = "./.openhands/artifacts"
