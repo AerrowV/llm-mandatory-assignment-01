@@ -1,0 +1,45 @@
+services:
+  litellm:
+    image: ghcr.io/berriai/litellm:latest
+    container_name: local-llm-proxy
+    restart: unless-stopped
+
+    ports:
+      - "127.0.0.1:4000:4000"
+
+    volumes:
+      - ./litellm/config.yml:/app/config.yaml:ro
+
+    env_file:
+      - .env
+
+    environment:
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
+
+    command:
+      - "--config"
+      - "/app/config.yaml"
+      - "--port"
+      - "4000"
+
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  openhands:
+    image: ghcr.io/openhands/agent-canvas:latest
+    container_name: local-openhands
+    restart: unless-stopped
+
+    depends_on:
+      - litellm
+
+    ports:
+      - "127.0.0.1:8000:8000"
+
+    volumes:
+    - ./workspace:/opt/workspace
+    - ./openhands/config.toml:/root/.openhands/config.toml:ro
+    - ./artifacts:/opt/artifacts
+
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
