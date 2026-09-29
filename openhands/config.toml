@@ -1,7 +1,0 @@
-[llm]
-base_url = "http://litellm:4000"
-model = "architecture-model"
-api_key = "local-llm"
-temperature = 0.3
-max_tokens = 4096
-timeout = 120
