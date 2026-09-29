@@ -1,10 +1,30 @@
+
 model_list:
   - model_name: architecture-model
     litellm_params:
-      model: ollama/tinyllama
-      api_base: http://localhost:11434/api
+      model: ollama/tinyllama:latest
+      api_base: http://host.docker.internal:11434
+      api_key: ollama
+    model_info:
+      id: tinyllama
+      mode: chat
+      supports_function_calling: false
+      max_input_tokens: 1536
+      max_output_tokens: 512
 
-  - model_name: implementation-model
+  # Coding worker: tool calling required, runs on the second server.
+  - model_name: coding-model
     litellm_params:
-      model: openai/qwen3.6:35b-a3b
-      api_base: http://host.docker.internal:1234/v1
+      model: ollama/qwen2.5-coder:7b
+      api_base: http://host.docker.internal:11435
+      api_key: ollama
+    model_info:
+      id: qwen2.5-coder:7b
+      mode: chat
+      supports_function_calling: true
+      max_input_tokens: 16384
+      max_output_tokens: 4096
+
+litellm_settings:
+  drop_params: true
+  request_timeout: 300

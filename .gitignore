@@ -241,3 +241,12 @@ cython_debug/
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 
+
+# OpenHands runtime state. Only the 3 config files are committed (the two LLM
+# profiles and the agent profile); they are all the setup needs, and the app
+# regenerates the api key, the automations db and the conversation logs itself.
+openhands/state/*
+!openhands/state/profiles/
+openhands/state/**/*.lock
+!openhands/state/agent-profiles/
+litellm/*.yml.bak

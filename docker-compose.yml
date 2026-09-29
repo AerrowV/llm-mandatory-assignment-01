@@ -1,45 +1,34 @@
 services:
+  # LiteLLM proxies the two local Ollama servers and is the only endpoint the
+  # agents talk to. Model -> endpoint routing lives in litellm/config.yml.
   litellm:
     image: ghcr.io/berriai/litellm:latest
-    container_name: local-llm-proxy
-    restart: unless-stopped
-
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
     ports:
       - "127.0.0.1:4000:4000"
-
     volumes:
       - ./litellm/config.yml:/app/config.yaml:ro
-
-    env_file:
-      - .env
-
     environment:
-      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
-
-    command:
-      - "--config"
-      - "/app/config.yaml"
-      - "--port"
-      - "4000"
-
+      LITELLM_MASTER_KEY: sk-local-not-secure
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:4000/health/liveliness')"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
     extra_hosts:
       - "host.docker.internal:host-gateway"
-
+  # OpenHands agent server. The repo is mounted at /opt/project so the agents
+  # read and write docs/ and tickets/ in place.
   openhands:
     image: ghcr.io/openhands/agent-canvas:latest
     container_name: local-openhands
-    restart: unless-stopped
-
     depends_on:
-      - litellm
-
+      litellm:
+        condition: service_healthy
     ports:
       - "127.0.0.1:8000:8000"
-
     volumes:
-    - ./workspace:/opt/workspace
-    - ./openhands/config.toml:/root/.openhands/config.toml:ro
-    - ./artifacts:/opt/artifacts
-
+      - ./:/opt/project
+      - ./openhands/state:/home/openhands/.openhands
     extra_hosts:
       - "host.docker.internal:host-gateway"

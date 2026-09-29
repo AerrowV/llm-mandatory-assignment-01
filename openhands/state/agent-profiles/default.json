@@ -3,6 +3,6 @@
   "id": "6d36bb7f-d15e-446d-92d9-62b9e69b8d32",
   "name": "default",
   "agent_kind": "openhands",
-  "llm_profile_ref": "coding",
+  "llm_profile_ref": "architecture",
   "agent": "CodeActAgent"
 }
