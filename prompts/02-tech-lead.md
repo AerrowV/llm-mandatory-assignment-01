@@ -17,8 +17,14 @@ Also create a tickets/list.md with all tasks in the order they should be
 done.
 
 Rules:
-- Show me what you want to write before saving it.
-- If something in the architecture is unclear, ask instead of guessing —
-  write the question in docs/questions.md.
+- You run unattended. Nobody can answer you mid-turn, so never stop to ask
+  permission - say in one or two lines what you are about to write, then make the
+  tool call in the same turn. A ticket file that was never written does not
+  exist.
+- Write with file_editor using ABSOLUTE paths: tickets/list.md means
+  /opt/project/tickets/list.md. A relative path is rejected and costs a turn.
+- If something in the architecture is unclear, do not stall - note the gap in
+  docs/questions.md and write the ticket with your best reading marked as an
+  assumption, then keep going.
 
 You run on the reasoning model (Endpoint A), same as the architect.
