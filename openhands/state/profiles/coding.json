@@ -5,5 +5,6 @@
   "api_mode": "chat",
   "timeout": 300,
   "stream": false,
-  "native_tool_calling": true
+  "native_tool_calling": true,
+  "temperature": 0
 }

@@ -132,7 +132,10 @@ def show_state():
 
 
 def run_role(target):
-    """Hand one role prompt to an agent and wait for it."""
+    """Hand one role prompt to an agent and wait for it.
+
+    Returns the conversation id, or None if the agent never started.
+    """
     path = next((p for p in sorted(PROMPTS.glob("0*.md"))
                  if p.stem.split("-", 1)[1] == target), None)
     if path:
@@ -160,11 +163,11 @@ def run_role(target):
         "confirmation_policy": {"kind": "NeverConfirm"},
     })
     if not conv:
-        return
+        return None
     cid = conv.get("conversation_id") or conv.get("id")
     if not cid:
         bad(f"no conversation id: {json.dumps(conv)[:200]}")
-        return
+        return None
     ok(f"conversation {cid} - watch at {AGENT}")
 
     while True:
@@ -172,7 +175,7 @@ def run_role(target):
                     .get("execution_status", "?")).lower()
         if state in DONE:
             (ok if state == "finished" else warn)(f"finished: {state}")
-            return
+            return cid
         time.sleep(5)
 
 
