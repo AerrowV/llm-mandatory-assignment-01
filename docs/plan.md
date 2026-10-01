@@ -1,5 +1,23 @@
 # OpenHands + LiteLLM Implementation Plan
 
+> ## STALE — DO NOT ACT ON THIS DOCUMENT
+>
+> Written 2026-09-28 against an earlier repo state. Several of its central claims
+> are **wrong** and have been disproven by later work:
+>
+> - §1.1 claims `ghcr.io/openhands/agent-canvas` is not a published image. It is
+>   published, pulls fine (5.2 GB), and is what `docker-compose.yml` uses.
+> - §1.1 claims the app listens on `:3000`. The running stack serves on `:8000`.
+> - §1.2 describes a legacy V0 `config.toml` layout the repo no longer uses.
+> - §2's "BLOCKED: agents cannot execute tools" is **resolved**. `SETUP.md`
+>   documents the four wiring faults that caused it; agents now execute tools.
+> - §2 lists `workspace/demo-project/` as README-only — still true.
+>
+> Live sources of truth: `SETUP.md` (what the stack is and how to run it),
+> `docs/requirements-audit.md` (requirement-by-requirement status),
+> `docs/functional-requirements.md` (how each responsibility is met).
+> Kept only for its risk table (§4) and phasing ideas (§3), which remain sound.
+
 Plan to make the recommended toolchain satisfy the assignment's hard and
 functional requirements. Derived from an audit of the current repo state
 against the current OpenHands and LiteLLM releases.
