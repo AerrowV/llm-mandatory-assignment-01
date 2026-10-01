@@ -111,7 +111,13 @@ requirement — plan and diffs reviewed before execution — run with `--confirm
 never` and let each worker commit to its own branch; the diffs are the review
 surface.
 
-Agents are given the whole repo. The UI is at <http://localhost:8000>.
+All three modes were exercised against the running server, and the gate was
+confirmed to block rather than just report: under `AlwaysConfirm` a pending shell
+command was rejected and the target file was never created. See
+"Confirmation policies are real and enforced" below.
+
+Agents are given the whole repo. The UI is at <http://localhost:8000/canvas>
+(the `/` path redirects there, matching the official Agent Canvas docs).
 
 ## 5. Run the demo
 
@@ -278,6 +284,65 @@ python3 endpoints/toolcheck.py --via-proxy --model coder-1 --stream
 Note the asymmetry with the LiteLLM docs, which recommend `ollama_chat/` for
 tool calling. That is fine for a single call and breaks this workload; see
 item 1.
+
+**Endpoint B runs `qwen3:8b`.** It was chosen over `qwen2.5-coder:7b` because
+it passes the tool check and additionally emits correctly indexed parallel tool
+calls, which the earlier candidate did not do. `qwen2.5:7b-instruct` is the
+documented fallback. Do not substitute `qwen2.5-coder:7b`: it returns tool calls
+as prose and cannot drive an agent.
+
+**One accepted cost: thinking cannot be disabled.** `qwen3:8b` is a thinking
+model, and LiteLLM reaches Ollama over the OpenAI-compatible `/v1` route, where
+the `think` parameter is ignored. Measured:
+
+| Route | `think` | Tool call | Thinking |
+| --- | --- | --- | --- |
+| `/api/chat` native | `true` | native | 694 eval tokens, 32.0 s |
+| `/api/chat` native | `false` | native | 0 eval tokens, 135 ms |
+| `/v1/chat/completions` | `true`/`false`/`low`/`high` | native | always emitted |
+| `/v1` + `/no_think` in prompt | n/a | native | still emitted |
+
+A single-tool turn costs 117 completion tokens; a realistic three-tool turn
+(create a module, create a test, run `pytest`) costs 1156 and ~4.6k characters of
+reasoning. Full table in `docs/verification.md` section 5.
+
+**Watch for the silent fallback.** Endpoint B roles fall back to `architect`
+(`qwen2.5:3b` on endpoint A), which is not tool-trained. A fallback during a
+pipeline run would break the requirement that execution roles really run tools,
+so pipeline measurements must record which model served each turn rather than
+trusting the role alias.
+
+## Faults that look like model problems
+
+Two configuration mistakes broke every agent turn while `/v1/models` kept
+answering normally. Both are easy to reintroduce.
+
+- **`os.environ/...` in an LLM profile is not expanded.** With
+  `"api_key": "os.environ/LITELLM_MASTER_KEY"` in
+  `openhands/state/profiles/*.json`, every conversation failed with
+  `400 no_db_connection`. LiteLLM reads the unresolved literal as an unknown key
+  and attempts a virtual-key lookup, which needs a database. The profiles hold
+  the literal key value instead.
+- **`general_settings.master_key` breaks without a database too.** Setting it in
+  `endpoints/config.yml` produces the identical error. The key is supplied only
+  via the `LITELLM_MASTER_KEY` environment variable.
+
+## Confirmation policies are real and enforced
+
+Measured against the running server rather than assumed:
+
+| Policy | Paused | Outcome |
+| --- | --- | --- |
+| `NeverConfirm` | no | command ran |
+| `AlwaysConfirm` | yes, `waiting_for_confirmation` | blocked; rejected, file never created |
+| `ConfirmRisky` | yes, `waiting_for_confirmation` | ran after `{"accept": true}` |
+
+Policy names come from the server's own OpenAPI document, not invented here. The
+approval endpoint is
+`POST /api/conversations/{conversation_id}/events/respond_to_confirmation` with
+`{accept, reason?}`. Reading events requires
+`/events/search?limit=N&sort_order=TIMESTAMP_DESC`; the plain `/events` route
+returns `422`. Details in `docs/verification.md` section 2.
 
 ## Security
 
