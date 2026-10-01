@@ -1,11 +1,11 @@
 {
   "base_url": "http://litellm:4000",
   "auth_type": "api_key",
-  "api_key": "os.environ/LITELLM_MASTER_KEY",
+  "api_key": "sk-local-not-secure",
   "api_mode": "chat",
   "timeout": 300,
   "model": "openai/coder-2",
   "native_tool_calling": true,
   "temperature": 0,
-  "_comment": "Alias 'coder-2' -> qwen2.5-coder:7b on execution worker 2: independent ticket, own worktree. The alias is resolved in endpoints/config.yml; this file never names a server. Never set native_tool_calling true on an unverified model - see endpoints/toolcheck.py."
+  "_comment": "Alias 'coder-2' -> qwen3:8b on endpoint B. Execution role: must create files and run commands, so native tool calling is mandatory and was verified with endpoints/toolcheck.py. The alias is resolved in endpoints/config.yml; this file never names a server. Note: qwen3 cannot disable thinking via /v1, which costs ~1156 completion tokens on a multi-tool turn. api_key is the literal throwaway loopback value, NOT os.environ/: OpenHands does not expand environment references in this field. Sending the literal string makes LiteLLM attempt a virtual-key lookup, which without a database returns 400 'No connected db.' on every turn while /v1/models still answers - it looks like a model fault. This key is safe to commit only because every port is bound to 127.0.0.1; it must be changed if the proxy is ever exposed."
 }
