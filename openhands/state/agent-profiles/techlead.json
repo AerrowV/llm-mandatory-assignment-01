@@ -1,0 +1,8 @@
+{
+  "schema_version": 2,
+  "id": "bfac63cb-924e-4141-b17f-5919ef6aac9a",
+  "name": "techlead",
+  "agent_kind": "openhands",
+  "llm_profile_ref": "techlead",
+  "agent": "CodeActAgent"
+}

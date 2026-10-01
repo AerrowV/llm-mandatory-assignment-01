@@ -1,0 +1,155 @@
+# Shared endpoint layer — toolchain-independent.
+#
+# One alias per pipeline role. Which physical endpoint an alias reaches is
+# decided ONLY in this file. Role prompts and toolchain code reference the
+# alias, never a server, so moving a role to another endpoint is a one-line
+# edit here plus `docker compose restart litellm`.
+#
+# Both toolchains under evaluation (OpenHands, CrewAI) point at these same
+# aliases on these same endpoints, so this file must not name either one.
+#
+# --- Provider prefix: read before changing ---------------------------------
+# `openai/<model>` against ollama's own /v1 endpoint, NOT `ollama_chat/`.
+# LiteLLM's ollama_chat handler re-serialises tool calls for the OpenAI wire
+# format and emits every parallel call under index=0, concatenating the
+# argument fragments into one unparseable string:
+#   {"path": "a.md"}{"path": "b.md"}
+# OpenHands rejects that ("Extra data: ... unparseable JSON"), the agent turn
+# dies, and it narrates instead of acting. Treating ollama as an
+# OpenAI-compatible server makes this a straight OpenAI -> OpenAI passthrough,
+# which preserves index=0/index=1 and keeps each call valid JSON.
+# The LiteLLM docs do recommend ollama_chat/; that recommendation is measured
+# and rejected for this workload. See SETUP.md and endpoints/toolcheck.py.
+#
+# --- Context window: do not lower ------------------------------------------
+# A single OpenHands request is ~20k tokens (system prompt + 21 tool
+# definitions). LiteLLM silently truncates against the declared
+# max_input_tokens, and a truncated model ignores its task and answers with
+# unrelated text. 32768 is the floor for this workload.
+#
+# --- supports_function_calling: only true if verified -----------------------
+# Measured with endpoints/toolcheck.py. A model that returns the call as
+# `content` text instead of `message.tool_calls` cannot drive an agent, no
+# matter what this flag says. Do not set it true on an assumption.
+
+model_list:
+  # ---- Endpoint A: planning roles. Reasoning-heavy, tool-light. -----------
+  # qwen2.5:3b emits native tool calls in both streaming and non-streaming
+  # mode, verified via endpoints/toolcheck.py.
+  - model_name: architect
+    litellm_params:
+      model: openai/qwen2.5:3b
+      api_base: http://host.docker.internal:11434/v1
+      api_key: ollama
+    model_info:
+      id: qwen2.5:3b
+      mode: chat
+      supports_function_calling: true
+      max_input_tokens: 32768
+      max_output_tokens: 4096
+
+  - model_name: techlead
+    litellm_params:
+      model: openai/qwen2.5:3b
+      api_base: http://host.docker.internal:11434/v1
+      api_key: ollama
+    model_info:
+      id: qwen2.5:3b
+      mode: chat
+      supports_function_calling: true
+      max_input_tokens: 32768
+      max_output_tokens: 4096
+
+  - model_name: docs
+    litellm_params:
+      model: openai/qwen2.5:3b
+      api_base: http://host.docker.internal:11434/v1
+      api_key: ollama
+    model_info:
+      id: qwen2.5:3b
+      mode: chat
+      supports_function_calling: true
+      max_input_tokens: 32768
+      max_output_tokens: 4096
+
+  # ---- Endpoint B: execution roles. Tool calling is mandatory here. --------
+  # Worker and tester must actually run tools to create files and execute
+  # tests, so this is where a non-tool-trained model would break FR3/FR4.
+  - model_name: coder-1
+    litellm_params:
+      model: openai/qwen2.5-coder:7b
+      api_base: http://host.docker.internal:11435/v1
+      api_key: ollama
+    model_info:
+      id: qwen2.5-coder:7b
+      mode: chat
+      supports_function_calling: false
+      max_input_tokens: 32768
+      max_output_tokens: 4096
+
+  - model_name: coder-2
+    litellm_params:
+      model: openai/qwen2.5-coder:7b
+      api_base: http://host.docker.internal:11435/v1
+      api_key: ollama
+    model_info:
+      id: qwen2.5-coder:7b
+      mode: chat
+      supports_function_calling: false
+      max_input_tokens: 32768
+      max_output_tokens: 4096
+
+  - model_name: tester
+    litellm_params:
+      model: openai/qwen2.5-coder:7b
+      api_base: http://host.docker.internal:11435/v1
+      api_key: ollama
+    model_info:
+      id: qwen2.5-coder:7b
+      mode: chat
+      supports_function_calling: false
+      max_input_tokens: 32768
+      max_output_tokens: 4096
+
+  # deploy-validator only reads and writes files, and shells out to
+  # docker/validate.sh. It is grouped with the execution roles because it must
+  # run commands, not just reason about them.
+  - model_name: deploy-validator
+    litellm_params:
+      model: openai/qwen2.5-coder:7b
+      api_base: http://host.docker.internal:11435/v1
+      api_key: ollama
+    model_info:
+      id: qwen2.5-coder:7b
+      mode: chat
+      supports_function_calling: false
+      max_input_tokens: 32768
+      max_output_tokens: 4096
+
+litellm_settings:
+  drop_params: true
+  request_timeout: 300
+  # Fall back to endpoint A if endpoint B is down, so a dead second server
+  # degrades throughput instead of failing the run outright. Measured: the
+  # coder model cannot drive an agent anyway, so this fallback is what makes
+  # the pipeline survivable today.
+  num_retries: 2
+  fallbacks:
+    - coder-1: [architect]
+    - coder-2: [architect]
+    - tester: [architect]
+    - deploy-validator: [architect]
+
+router_settings:
+  routing_strategy: simple-shuffle
+  num_retries: 2
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+  # Do NOT set store_model_in_db, and do not give this proxy a DATABASE_URL.
+  # With a database attached, LiteLLM treats the model list as DB-backed state
+  # while still only ever loading the router from this file at startup. The two
+  # drift apart and /v1/models silently drops aliases, which surfaces as
+  # "Invalid model name passed in model=<alias>" on every agent request.
+  # This file is the single source of truth; restart litellm after editing it.
+  store_model_in_db: false

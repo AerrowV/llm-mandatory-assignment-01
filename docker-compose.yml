@@ -1,15 +1,19 @@
 services:
   # LiteLLM proxies the two local Ollama servers and is the only endpoint the
-  # agents talk to. Model -> endpoint routing lives in litellm/config.yml.
+  # agents talk to. Model -> endpoint routing lives in endpoints/config.yml.
+  # This proxy is toolchain-independent: the later CrewAI toolchain targets the
+  # same aliases on the same endpoints.
   litellm:
     image: ghcr.io/berriai/litellm:latest
     command: ["--config", "/app/config.yaml", "--port", "4000"]
     ports:
       - "127.0.0.1:4000:4000"
     volumes:
-      - ./litellm/config.yml:/app/config.yaml:ro
-    environment:
-      LITELLM_MASTER_KEY: sk-local-not-secure
+      - ./endpoints/config.yml:/app/config.yaml:ro
+    # general_settings.master_key in config.yml reads this. The proxy refuses
+    # every route without it, so the key is the security baseline.
+    env_file:
+      - ./endpoints/.env
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:4000/health/liveliness')"]
       interval: 5s
@@ -25,6 +29,12 @@ services:
     depends_on:
       litellm:
         condition: service_healthy
+    # LLM credentials are injected from endpoints/.env, not hardcoded here.
+    # The proxy and the agent must agree on the key, so both read the same
+    # file. Every profile in openhands/state/profiles/*.json references the
+    # same env var name.
+    env_file:
+      - ./endpoints/.env
     ports:
       - "127.0.0.1:8000:8000"
     volumes:

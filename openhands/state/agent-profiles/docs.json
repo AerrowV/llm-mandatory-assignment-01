@@ -1,0 +1,8 @@
+{
+  "schema_version": 2,
+  "id": "8037794d-5712-4c42-8ac8-ec97377cb7d2",
+  "name": "docs",
+  "agent_kind": "openhands",
+  "llm_profile_ref": "docs",
+  "agent": "CodeActAgent"
+}

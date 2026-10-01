@@ -1,0 +1,8 @@
+{
+  "schema_version": 2,
+  "id": "6171d280-b2ec-4492-9020-85c16313d86b",
+  "name": "architect",
+  "agent_kind": "openhands",
+  "llm_profile_ref": "architect",
+  "agent": "CodeActAgent"
+}

@@ -1,0 +1,8 @@
+{
+  "schema_version": 2,
+  "id": "43415cb6-54fc-4e1b-a63e-c04a15cb993c",
+  "name": "tester",
+  "agent_kind": "openhands",
+  "llm_profile_ref": "tester",
+  "agent": "CodeActAgent"
+}

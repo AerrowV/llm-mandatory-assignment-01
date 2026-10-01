@@ -1,0 +1,8 @@
+{
+  "schema_version": 2,
+  "id": "d6a6d9c1-ee59-4537-8528-24df0eba4b43",
+  "name": "coder-2",
+  "agent_kind": "openhands",
+  "llm_profile_ref": "coder-2",
+  "agent": "CodeActAgent"
+}

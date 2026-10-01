@@ -1,0 +1,11 @@
+{
+  "base_url": "http://litellm:4000",
+  "auth_type": "api_key",
+  "api_key": "os.environ/LITELLM_MASTER_KEY",
+  "api_mode": "chat",
+  "timeout": 300,
+  "model": "openai/coder-2",
+  "native_tool_calling": true,
+  "temperature": 0,
+  "_comment": "Alias 'coder-2' -> qwen2.5-coder:7b on execution worker 2: independent ticket, own worktree. The alias is resolved in endpoints/config.yml; this file never names a server. Never set native_tool_calling true on an unverified model - see endpoints/toolcheck.py."
+}

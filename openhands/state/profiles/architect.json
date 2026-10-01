@@ -1,0 +1,11 @@
+{
+  "base_url": "http://litellm:4000",
+  "auth_type": "api_key",
+  "api_key": "os.environ/LITELLM_MASTER_KEY",
+  "api_mode": "chat",
+  "timeout": 300,
+  "model": "openai/architect",
+  "native_tool_calling": true,
+  "temperature": 0,
+  "_comment": "Alias 'architect' -> qwen2.5:3b on planning: reasoning-heavy, tool-light. The alias is resolved in endpoints/config.yml; this file never names a server. Never set native_tool_calling true on an unverified model - see endpoints/toolcheck.py."
+}

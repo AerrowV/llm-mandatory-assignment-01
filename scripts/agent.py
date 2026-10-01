@@ -2,10 +2,21 @@
 """Bring up the stack, show its state, and hand one role to an agent.
 
     python3 scripts/agent.py                 # start everything, run the architect
-    python3 scripts/agent.py testing         # run a different role
+    python3 scripts/agent.py tester          # run a different role
     python3 scripts/agent.py "add a /health route"
     python3 scripts/agent.py --check         # just report state, change nothing
     python3 scripts/agent.py --check --run    # report state, then run a role
+
+    python3 scripts/agent.py --confirm risky coder
+    python3 scripts/agent.py --confirm always architect
+
+Roles are architect, techlead, coder, tester, docs, deploy-validator. Each has
+its own agent profile, so each resolves to its own LiteLLM alias.
+
+--confirm is the control mechanism for non-functional requirement 1:
+    never   no prompts; the only setting an unattended pipeline can use
+    risky   ask before shell commands and destructive file operations
+    always  ask before every action
 
 Standard library only. See SETUP.md for what the pieces are.
 """
@@ -19,7 +30,7 @@ import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-PROMPTS = ROOT / "prompts"
+PROMPTS = ROOT / "openhands" / "prompts"
 LITELLM = "http://localhost:4000"
 AGENT = "http://localhost:8000"
 API_KEY = ROOT / "openhands" / "state" / "agent-canvas" / "api-key.txt"
@@ -27,10 +38,38 @@ WORKDIR = "/opt/project"  # where the repo is mounted inside the container
 
 # The assignment wants two separate model servers, not two models on one.
 SERVERS = [("endpoint A", 11434), ("endpoint B", 11435)]
-KEY = "sk-local-not-secure"  # throwaway loopback key, matches docker-compose.yml
+KEY = "sk-local-not-secure"  # throwaway loopback key, matches endpoints/.env
 
-ROLES = ["architect", "tech-lead", "implementation", "testing",
-         "documentation", "deployment"]
+# Role -> prompt file stem. The role name is also the LiteLLM alias and the
+# name of its agent profile, so `run_role("architect")` resolves all three
+# from this one table.
+#
+# coder-1 and coder-2 are the two parallel workers. They share one prompt and
+# one model, and are distinguished only by name, so the pipeline can point
+# each at a different git worktree and run them concurrently. That is the
+# N >= 2 worker fan-out for functional requirement 3.
+ROLES = {
+    "architect": "01-architect",
+    "techlead": "02-tech-lead",
+    "coder-1": "03-implementation",
+    "coder-2": "03-implementation",
+    "tester": "04-testing",
+    "docs": "05-documentation",
+    "deploy-validator": "06-deployment",
+}
+
+# Non-functional requirement 1 wants a control mechanism: ask-before-edit, or
+# plan + diffs reviewed before execution. OpenHands exposes these as a
+# confirmation policy per conversation, so it is a run-time choice rather than
+# a hardcoded constant. "never" keeps unattended pipeline runs possible;
+# "risky" gates shell commands and destructive file operations, which is the
+# closest available thing to ask-before-run.
+CONFIRMATION = {
+    "never": {"kind": "NeverConfirm"},
+    "risky": {"kind": "ConfirmRisky"},
+    "always": {"kind": "AlwaysConfirm"},
+}
+
 DONE = {"finished", "error", "stopped", "terminated", "paused", "idle"}
 
 
@@ -127,40 +166,75 @@ def show_state():
         bad("litellm is not answering /v1/models")
         return up
     for model in sorted(m["id"] for m in data["data"]):
-        ok(f"{model}  ->  a server in litellm/config.yml")
+        ok(f"{model}  ->  a server in endpoints/config.yml")
     return up
 
 
-def run_role(target):
+def resolve_profile(role):
+    """Find the agent profile whose llm_profile_ref matches the role.
+
+    The role name is the join key across three layers: the prompt file, the
+    LiteLLM alias, and the agent profile. Each role has its own profile, so
+    binding a role to a different endpoint is a one-line edit in
+    endpoints/config.yml plus a restart — nothing here changes.
+
+    Returns (profile_id, llm_profile_name) or (None, None).
+    """
+    data = agent_api("/api/agent-profiles")
+    if not data:
+        return None, None
+    for p in data.get("profiles", []):
+        if p.get("name") == role:
+            return p["id"], p.get("llm_profile_ref")
+    return None, None
+
+
+def run_role(target, confirm="never", workdir=WORKDIR):
     """Hand one role prompt to an agent and wait for it.
+
+    `target` is a role name from ROLES, or a literal prompt string.
+    `confirm` is one of CONFIRMATION.
 
     Returns the conversation id, or None if the agent never started.
     """
-    path = next((p for p in sorted(PROMPTS.glob("0*.md"))
-                 if p.stem.split("-", 1)[1] == target), None)
-    if path:
-        prompt, label = path.read_text(), f"prompts/{path.name}"
+    if confirm not in CONFIRMATION:
+        bad(f"unknown confirmation mode {confirm!r}; "
+            f"pick one of {', '.join(CONFIRMATION)}")
+        return None
+
+    prompt, label, role = target, "custom prompt", None
+    if target in ROLES:
+        role = target
+        path = PROMPTS / f"{ROLES[role]}.md"
+        if path.exists():
+            prompt, label = path.read_text(), f"openhands/{path.name}"
+        else:
+            warn(f"{role}: no prompt at {path.relative_to(ROOT)}")
+
+    if role:
+        profile_id, llm_profile = resolve_profile(role)
+        if not profile_id:
+            bad(f"no agent profile named {role!r} "
+                "(expected openhands/state/agent-profiles/%s.json)" % role)
+            return None
+        ok(f"{label}  ->  profile {role}  ->  {llm_profile}")
     else:
-        prompt, label = target, "custom prompt"
+        data = agent_api("/api/agent-profiles")
+        profile_id = next((p["id"] for p in (data or {}).get("profiles", [])
+                           if p.get("name") == "architect"), None)
+        if not profile_id:
+            bad("no 'architect' agent profile to fall back on")
+            return None
+        ok(f"{label}  ->  profile architect (custom prompt)")
 
-    profile_id = None
-    data = agent_api("/api/agent-profiles")
-    if data:
-        profile_id = next((p["id"] for p in data.get("profiles", [])
-                           if p.get("name") == "default"), None)
-    if not profile_id:
-        bad("no 'default' agent profile")
-        return
-
-    ok(f"{label}")
     conv = agent_api("/api/conversations", {
         "agent_profile_id": profile_id,
-        "workspace": {"working_dir": WORKDIR, "kind": "LocalWorkspace"},
+        "workspace": {"working_dir": workdir, "kind": "LocalWorkspace"},
         "initial_message": {"role": "user",
                             "content": [{"type": "text", "text": prompt}],
                             "run": True},
         "max_iterations": 100,
-        "confirmation_policy": {"kind": "NeverConfirm"},
+        "confirmation_policy": CONFIRMATION[confirm],
     })
     if not conv:
         return None
@@ -180,10 +254,31 @@ def run_role(target):
 
 
 def main():
-    args = [a for a in sys.argv[1:]]
+    args = sys.argv[1:]
     check_only = "--check" in args
     want_run = "--run" in args or not check_only
-    args = [a for a in args if not a.startswith("--")]
+
+    confirm, rest = "never", []
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if a == "--confirm" and i + 1 < len(args):
+            confirm, i = args[i + 1], i + 2
+        elif a.startswith("--confirm="):
+            confirm, i = a.split("=", 1)[1], i + 1
+        elif a in ("--check", "--run"):
+            i += 1
+        elif a.startswith("-"):
+            bad(f"unknown flag {a}")
+            return 1
+        else:
+            rest.append(a)
+            i += 1
+
+    if confirm not in CONFIRMATION:
+        bad(f"unknown confirmation mode {confirm!r}; "
+            f"pick one of {', '.join(CONFIRMATION)}")
+        return 1
 
     if subprocess.run(["docker", "info"], capture_output=True).returncode != 0:
         bad("docker is not running")
@@ -198,7 +293,7 @@ def main():
         return 0
 
     print()
-    run_role(args[0] if args else "architect")
+    run_role(rest[0] if rest else "architect", confirm=confirm)
     return 0
 
 
