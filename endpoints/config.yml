@@ -75,39 +75,56 @@ model_list:
   # ---- Endpoint B: execution roles. Tool calling is mandatory here. --------
   # Worker and tester must actually run tools to create files and execute
   # tests, so this is where a non-tool-trained model would break FR3/FR4.
+  #
+  # qwen3:8b, verified native in both modes direct and via proxy.
+  # Context window is 40960, declared as 32768 to leave headroom over the
+  # ~20k token agent request; see the context note at the top of this file.
+  #
+  # Thinking mode CANNOT be turned off on this model through the OpenAI-
+  # compatible /v1 endpoint. Measured: the `think` parameter is ignored on
+  # /v1 (reasoning still emitted), and `/no_think` in the prompt is ignored
+  # too. Only the native /api/chat endpoint honours it, and LiteLLM does not
+  # use that path here. Cost on a real multi-tool turn: 1156 completion tokens
+  # and ~4.6k chars of reasoning, versus 117 tokens for a single tool call.
+  # That is the price of the endpoint, and it is why fallbacks to `architect`
+  # (a 3b model that does not think) matter when B is slow.
+  #
+  # Documented fallback if qwen3:8b misbehaves: qwen2.5:7b-instruct, also
+  # verified native. Do NOT substitute qwen2.5-coder:7b - it returns tool
+  # calls as text and cannot drive an agent.
   - model_name: coder-1
     litellm_params:
-      model: openai/qwen2.5-coder:7b
+      model: openai/qwen3:8b
       api_base: http://host.docker.internal:11435/v1
       api_key: ollama
     model_info:
-      id: qwen2.5-coder:7b
+      id: qwen3:8b
       mode: chat
-      supports_function_calling: false
+      supports_function_calling: true
       max_input_tokens: 32768
       max_output_tokens: 4096
 
   - model_name: coder-2
     litellm_params:
-      model: openai/qwen2.5-coder:7b
+      model: openai/qwen3:8b
       api_base: http://host.docker.internal:11435/v1
       api_key: ollama
     model_info:
-      id: qwen2.5-coder:7b
+      id: qwen3:8b
       mode: chat
-      supports_function_calling: false
+      supports_function_calling: true
       max_input_tokens: 32768
       max_output_tokens: 4096
 
   - model_name: tester
     litellm_params:
-      model: openai/qwen2.5-coder:7b
+      model: openai/qwen3:8b
       api_base: http://host.docker.internal:11435/v1
       api_key: ollama
     model_info:
-      id: qwen2.5-coder:7b
+      id: qwen3:8b
       mode: chat
-      supports_function_calling: false
+      supports_function_calling: true
       max_input_tokens: 32768
       max_output_tokens: 4096
 
@@ -116,13 +133,13 @@ model_list:
   # run commands, not just reason about them.
   - model_name: deploy-validator
     litellm_params:
-      model: openai/qwen2.5-coder:7b
+      model: openai/qwen3:8b
       api_base: http://host.docker.internal:11435/v1
       api_key: ollama
     model_info:
-      id: qwen2.5-coder:7b
+      id: qwen3:8b
       mode: chat
-      supports_function_calling: false
+      supports_function_calling: true
       max_input_tokens: 32768
       max_output_tokens: 4096
 
@@ -145,7 +162,16 @@ router_settings:
   num_retries: 2
 
 general_settings:
-  master_key: os.environ/LITELLM_MASTER_KEY
+  # Deliberately NO `master_key:` here. Setting it in the file makes LiteLLM
+  # authenticate callers through its virtual-key path, which requires a
+  # database. Without one, every request fails with:
+  #   400 no_db_connection  {"error": {"message": "No connected db."}}
+  # The proxy key is supplied as the LITELLM_MASTER_KEY environment variable
+  # instead (see docker-compose.yml env_file and endpoints/.env), which
+  # authenticates in-process with no database. This was measured: adding
+  # `master_key: os.environ/LITELLM_MASTER_KEY` broke every agent turn while
+  # /v1/models still answered, so the fault looked like a model problem.
+  #
   # Do NOT set store_model_in_db, and do not give this proxy a DATABASE_URL.
   # With a database attached, LiteLLM treats the model list as DB-backed state
   # while still only ever loading the router from this file at startup. The two
