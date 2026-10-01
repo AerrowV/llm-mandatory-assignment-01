@@ -1,41 +1,39 @@
-# Demo project: textmetrics
+# Demo project: todoapp
 
-A small library the pipeline builds against. It exists so the testing role has
-real code to exercise and the two coding workers have genuinely separable work.
+A small HTTP API the pipeline builds against. It exists so the coding workers
+have a real task and the testing role has real behaviour to exercise.
+
+Standard library only. No Flask, no pytest, no pip installs: the agent container
+has none of them and installing needs approval.
 
 ## Layout
 
 ```
-src/textmetrics/__init__.py
-src/textmetrics/tokens.py      worker 1 - tokenisation helpers
-src/textmetrics/readability.py worker 2 - readability scores
-tests/test_tokens.py
-tests/test_readability.py
+src/todoapp/__init__.py
+src/todoapp/storage.py   worker 1 - the in-memory store, no HTTP involved
+src/todoapp/server.py    worker 2 - HTTP routing on top of the store
+tests/test_storage.py    worker 1
+tests/test_server.py     worker 2
+run.py                   entry point, already written
 ```
 
-Two workers, two modules, no shared files. That is deliberate: it means a
-pipeline run can prove real parallelism, because two agents editing the same
-file would be a merge conflict rather than a demonstration.
+Two workers, two modules, no shared file. That split is deliberate. Two agents
+editing the same file would produce a merge conflict, not a demonstration that
+parallel workers work.
 
 ## Status
 
-`tokens.py` and `readability.py` are stubs. Each raises `NotImplementedError`.
-The test files exist and currently fail. That is the state the architect and
-tech lead roles read, and it is what the coding workers are asked to fix.
+`storage.py` and `server.py` are stubs. Every function raises
+`NotImplementedError`. The test files are complete and currently fail.
 
-## Running the tests
-
-The container has no pytest, so the tests use the standard library:
+## Running it
 
 ```bash
 cd workspace/demo-project
-python3 -m unittest discover -s tests -v
+PYTHONPATH=src python3 run.py            # listens on 127.0.0.1:8765
+PYTHONPATH=src python3 -m unittest discover -s tests -v
 ```
 
-`ruff` is not installed either. Static checks use `python3 -m compileall` plus
-`python3 -m py_compile`, which is what the testing role reports on. Installing
-tools would need approval, so the pipeline does not depend on it.
+Static checks are `python3 -m compileall -q src`. `ruff` is not installed.
 
-## TASK.md
-
-The task spec the agents work from.
+`TASK.md` is the specification the agents work from.
