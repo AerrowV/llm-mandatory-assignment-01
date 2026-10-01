@@ -15,7 +15,7 @@ Roles are not hardcoded into the agent. They are a chain of three indirections, 
 one config edit re-points a role at a different model server:
 
 ```
-role prompt (prompts/0*.md)
+role prompt (openhands/prompts/0*.md)
   -> agent profile  (openhands/state/agent-profiles/<role>.json -> llm_profile_ref)
   -> LLM profile    (openhands/state/profiles/<role>.json -> "openai/<alias>")
   -> LiteLLM alias  (endpoints/config.yaml -> api_base + model)
@@ -26,12 +26,15 @@ The LLM profile names a **LiteLLM alias**, never a server. Which physical endpoi
 an alias reaches is decided only in the proxy config, so moving a role between
 endpoints is a one-line edit plus `docker compose restart litellm` — no rewiring.
 
-**This chain is not fully built.** As of this writing there is a single agent
-profile (`default`) bound to a single LLM profile (`architecture`), and
-`scripts/agent.py` resolves that one profile for every role. There is no per-role
-`llm_profile_ref` in effect, so *all six roles currently run on endpoint A*.
-Binding roles to distinct aliases is Phase 1 work and is tracked in
-`docs/evaluation-openhands.md`.
+**This chain is now wired.** Each role has its own agent profile and its own LLM
+profile, and `scripts/agent.py` resolves the profile by role name rather than
+hardcoding a single `default`. Verified against the running server, which reports
+seven distinct profile-to-role bindings. It was previously a single `default`
+profile, so every role ran on endpoint A; that was corrected in Phase 1.
+
+Routing is real but **untested against a real agent turn** — the aliases are
+served and answer tool calls, but no role has yet produced an artifact, so this
+is verified at the gateway layer only.
 
 Handoff between roles is by **file in the repo**, not by conversation memory. The
 repo is bind-mounted read-write at `/opt/project`, so each role reads its
@@ -50,14 +53,14 @@ predecessor's files and writes its own into the same tree. This part is real.
 
 ## 1. Architecture — mechanism proven
 
-`prompts/01-architect.md` binds the role to one artifact per required output:
+`openhands/prompts/01-architect.md` binds the role to one artifact per required output:
 component decomposition → `docs/components.md`, interface contracts →
 `docs/api.md`, deployment topology → `docs/deployment.md`, and decision records →
 `docs/decisions.md`. It closes with a mandatory `docs/handoff.md` so the next role
 has an explicit entry point rather than inferring state.
 
 The role is *intended* to be bound to endpoint A (`qwen2.5:3b`) via
-`openhands/state/profiles/architecture.json`. In practice every role resolves to
+`openhands/state/profiles/architect.json`. In practice every role resolves to
 that same profile today — see the chain note above. Architecture work is
 reasoning-heavy and tool-light, so a chat model on the planning endpoint is the
 right capacity split, but this has not been demonstrated for the architect role
@@ -72,7 +75,7 @@ generated yet.
 
 ## 2. Tech lead — mechanism proven
 
-`prompts/02-tech-lead.md` consumes `docs/handoff.md` plus the rest of `docs/`
+`openhands/prompts/02-tech-lead.md` consumes `docs/handoff.md` plus the rest of `docs/`
 and emits one ticket file per task carrying exactly the three fields the
 requirement names: an explicit **scope boundary** ("what it does NOT cover"),
 **acceptance criteria** phrased as 2–3 checkable conditions, and **declared
@@ -131,7 +134,7 @@ round trip straight through LiteLLM with no OpenHands involved. A green smoke
 test with a red verify localises the fault to the agent rather than the wiring —
 which is exactly the diagnosis that unblocked this project.
 
-*The role layer.* `prompts/04-testing.md` requires creating and running tests
+*The role layer.* `openhands/prompts/04-testing.md` requires creating and running tests
 and emitting a quality report with test results, static checks, and known
 limitations/risks — the three required subsections are all named in the prompt.
 
@@ -142,7 +145,7 @@ finishing before a run means anything.
 
 ## 5. Documentation — NOT MET
 
-The prompt is complete; the deliverable is not. `prompts/05-documentation.md` is
+The prompt is complete; the deliverable is not. `openhands/prompts/05-documentation.md` is
 the most complete of the six: developer and user
 docs, README setup/config/usage/troubleshooting, API reference with auth,
 endpoints, parameters, responses and errors, operational runbooks (deploy,
@@ -180,7 +183,7 @@ toolchain validates *programmatically* rather than by assertion:
   prints the live routing table from `/v1/models` — then changes nothing. It
   exits non-zero if an endpoint is down.
 - **Environment/config documentation.** `SETUP.md` §2–3 plus the per-service file
-  table; `litellm/config.yml` and both LLM profiles are committed, plain JSON/YAML
+  table; `endpoints/config.yml` and the LLM profiles are committed, plain JSON/YAML
   with inline rationale, so the intended config is reviewable in git.
 - **Deployment checklist.** `SETUP.md`'s four-failure-mode section is the
   pre-flight check an operator runs first.
