@@ -18,29 +18,28 @@ Your core objective is to run multiple coding workers.
 
 ## The task
 
-Implement the two stub modules in `workspace/demo-project/src/todoapp/`.
+Implement the stub module `{{WORKDIR}}/src/todoapp/{{MODULE}}`.
 
-Read `workspace/demo-project/TASK.md` first. It is the specification: every
+Read `{{WORKDIR}}/TASK.md` first. It is the specification: every
 signature, every status code, every edge case. Do not invent a different API.
+
+Your one file to write is `{{WORKDIR}}/src/todoapp/{{MODULE}}`. It currently
+raises `NotImplementedError`. The other stub belongs to the other worker, who is
+working on it right now: do not read it, do not edit it, do not wait for it.
 
 Current state:
 
-- `src/todoapp/storage.py` and `src/todoapp/server.py` raise `NotImplementedError`.
-- `tests/test_storage.py` and `tests/test_server.py` are complete and fail.
+- Both stub modules raise `NotImplementedError`.
+- Both test files are complete and fail.
 - `src/todoapp/__init__.py` and `run.py` are already written. Leave them alone.
 
 ## Work split
 
 Each worker owns one module and its one test file:
 
-| worker | module | test file |
-| --- | --- | --- |
-| coder-1 | `src/todoapp/storage.py` | `tests/test_storage.py` |
-| coder-2 | `src/todoapp/server.py` | `tests/test_server.py` |
-
-If you are coder-1, do `storage.py` only. If you are coder-2, do `server.py`
-only. Do not edit the other worker's files. Two workers writing to one file would
-conflict on merge instead of showing that they ran in parallel.
+Write that exact absolute path. Do not shorten it, do not drop the
+`workspace/demo-project` part, and do not guess a path. A path that does not
+exist costs you a turn and returns "Invalid `path` parameter".
 
 You depend on nothing the other worker is writing: `storage.py` must not import
 `server.py`, so coder-2 can code against the documented `TodoStore` signature
@@ -50,13 +49,13 @@ while coder-1 is still writing it.
 
 - `pytest`, `flask` and `requests` are **not** installed. Use the standard
   library. Do not try to install anything; it will fail and cost you turns.
-- Run tests from `workspace/demo-project`:
+- Run tests from `{{WORKDIR}}`:
 
   ```bash
-  python3 -m unittest discover -s tests -v
+  cd {{WORKDIR}} && python3 -m unittest discover -s tests -v
   ```
 
-- Static checks: `python3 -m compileall -q src`.
+- Static checks: `cd {{WORKDIR}} && python3 -m compileall -q src`.
 - Actually run the tests and read the output. A module that looks finished but
   fails an edge case in `TASK.md` is not finished.
 
@@ -67,8 +66,8 @@ while coder-1 is still writing it.
 End your run reporting, in this order:
 
 1. Files changed, one per line.
-2. The full `python3 -m unittest discover -s tests -v` output, unedited. If any
-   test failed, say so. Do not summarise a failure as a pass.
+2. The full test output, unedited. If any test failed, say so. Do not summarise
+   a failure as a pass.
 3. For coder-2: confirm you started the server and what
    `curl 127.0.0.1:8765/health` returned.
 4. Anything in `TASK.md` you could not satisfy, and why.
@@ -76,3 +75,10 @@ End your run reporting, in this order:
 Do not claim a result you did not observe. An unverified "all tests pass" is
 worse than a reported failure, because the testing role builds on your report
 and cannot check it.
+## Be efficient
+
+You have a limited number of turns and a shared machine. Read what you need, then
+write the file. Do not re-read a file you have already read, do not write a
+placeholder before the real content, and do not spend turns narrating a plan
+instead of editing. If you are going to run out of turns, write the
+implementation before anything else.

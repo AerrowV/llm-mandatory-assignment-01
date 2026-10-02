@@ -21,12 +21,13 @@ Your core objective is to create and run tests
 
 ## The task
 
-Test `workspace/demo-project/`, which the coding workers just implemented.
+Test `{{WORKDIR}}/`, which the coding workers just implemented.
 
 Two things happened before you: the workers implemented `src/todoapp/storage.py`
-and `src/todoapp/server.py`, and their changes have been merged into the main
-checkout. Read `workspace/demo-project/TASK.md` for the intended contract, and
-read the two source files to see what was actually written.
+and `src/todoapp/server.py`, and their changes have been merged. Read
+`{{WORKDIR}}/TASK.md` for the intended contract, and read both source files to
+see what was actually written. Use those exact absolute paths; do not guess
+them.
 
 Your job:
 
@@ -49,9 +50,8 @@ Your job:
 ## Your environment
 
 ```bash
-cd workspace/demo-project
-python3 -m unittest discover -s tests -v     # full suite
-python3 run.py                              # manual server, 127.0.0.1:8765
+cd {{WORKDIR}} && python3 -m unittest discover -s tests -v
+cd {{WORKDIR}} && python3 run.py
 ```
 
 `PYTHONPATH=src` is set inside `run.py` already. In your own tests, insert
@@ -66,7 +66,7 @@ running server.
 
 ## Output Format
 
-Write `workspace/demo-project/QUALITY.md` containing:
+Write `{{WORKDIR}}/QUALITY.md` containing:
 
 ### Test results
 The literal command you ran and its real summary line, then pass/fail per test

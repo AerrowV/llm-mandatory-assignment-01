@@ -193,31 +193,49 @@ def resolve_profile(role):
     return None, None
 
 
-def scope_prompt(prompt, role, workdir):
-    """Tell the agent where it is, and make sure it cannot escape.
+# The file each coding worker owns. The prompts reference it as {{MODULE}} so
+# the pipeline supplies the module name instead of the model working out which of
+# the two stubs is its own. Leaving that to the model is how both workers ended
+# up narrating a plan instead of writing code.
+WORKER_MODULE = {
+    "coder-1": "storage.py",
+    "coder-2": "server.py",
+}
 
-    Two problems this prevents. The role prompts mandate absolute paths like
-    /opt/project/docs/x.md, which is correct for a role working in the repo root
-    but wrong for a worker in a worktree: it would write straight into the main
-    checkout and leave the worker's branch empty. And a role that is told to
-    "run in /opt/project" but actually sits in a worktree will wander outside
-    the branch it owns.
+
+def render_prompt(text, role, workdir):
+    """Substitute the placeholders a role prompt may use.
+
+    {{WORKDIR}} is the absolute directory the agent is in, so a worker in a
+    worktree gets its own path rather than the main checkout. The earlier
+    version only appended a warning telling the agent to use its worktree; the
+    model still assembled a path from the wrong pieces and got
+    "Invalid `path` parameter" back. Supplying the literal path in the prompt
+    removes the guesswork.
     """
+    return (text
+            .replace("{{WORKDIR}}", workdir)
+            .replace("{{MODULE}}", WORKER_MODULE.get(role, "")))
+
+
+def scope_prompt(prompt, role, workdir):
+    """Warn a worktree worker that it must stay on its own branch."""
     if not role or workdir == WORKDIR:
         return prompt
     return (
         f"# WHERE YOU ARE RUNNING\n\n"
-        f"You are worker `{role}`. Your working directory is `{workdir}`, a git\n"
-        f"worktree on branch `agent/{role}`. Every path you write must start with\n"
-        f"`{workdir}/`. Do not write to `/opt/project/` directly: that is the main\n"
-        f"checkout and your work would not land on your branch.\n\n"
-        f"Your changes are merged back for you afterwards. You do not need to run\n"
-        f"git commands, and you should not try to switch branches.\n\n"
+        f"You are worker `{role}`. You are in a git worktree on branch "
+        f"`agent/{role}`. Every path you write or reads must start with "
+        f"`{workdir}/`. Writing to `/opt/project/` directly means writing to the "
+        f"main checkout, and your work would not land on your branch.\n\n"
+        f"Your changes are merged back for you afterwards. Do not run git "
+        f"commands and do not switch branches.\n\n"
         f"---\n\n{prompt}"
     )
 
 
-def run_role(target, confirm="never", workdir=WORKDIR, started=None, finished=None):
+def run_role(target, confirm="never", workdir=WORKDIR, started=None, finished=None,
+             max_iterations=100, deadline=None):
     """Hand one role prompt to an agent and wait for it.
 
     `target` is a role name from ROLES, or a literal prompt string.
@@ -236,9 +254,14 @@ def run_role(target, confirm="never", workdir=WORKDIR, started=None, finished=No
     prompt, label, role = target, "custom prompt", None
     if target in ROLES:
         role = target
+        # A project role defaults into the demo project even when run from the
+        # main checkout, so {{WORKDIR}} means the same thing in both cases.
+        if workdir == WORKDIR:
+            workdir = workdir_for(role)
         path = PROMPTS / f"{ROLES[role]}.md"
         if path.exists():
-            prompt = scope_prompt(path.read_text(), role, workdir)
+            prompt = scope_prompt(
+                render_prompt(path.read_text(), role, workdir), role, workdir)
             label = f"openhands/{path.name}"
         else:
             warn(f"{role}: no prompt at {path.relative_to(ROOT)}")
@@ -265,7 +288,7 @@ def run_role(target, confirm="never", workdir=WORKDIR, started=None, finished=No
         "initial_message": {"role": "user",
                             "content": [{"type": "text", "text": prompt}],
                             "run": True},
-        "max_iterations": 100,
+        "max_iterations": max_iterations,
         "confirmation_policy": CONFIRMATION[confirm],
     })
     if not conv:
@@ -288,10 +311,34 @@ def run_role(target, confirm="never", workdir=WORKDIR, started=None, finished=No
                 finished["t1"] = time.time()
             (ok if state == "finished" else warn)(f"finished: {state}")
             return cid
+        # A wall-clock cap, because an 8b model with thinking enabled on a
+        # memory-starved host can otherwise sit in a loop of read-then-plan
+        # forever. It stops the wait; it does not stop the agent, so the
+        # conversation is stopped explicitly below.
+        if deadline and time.time() > deadline:
+            warn(f"hit the {int(deadline - started['t0']) if started else 0}s "
+                 "budget, pausing the conversation")
+            agent_api(f"/api/conversations/{cid}/pause", {}, timeout=30)
+            if finished is not None:
+                finished["cid"] = cid
+                finished["t1"] = time.time()
+            return cid
         time.sleep(5)
 
 
 WORKTREES = ROOT / ".worktrees"
+
+# Roles that work on the demo project rather than the repo root. Their prompts
+# use {{WORKDIR}} for the project directory, so it has to actually be the
+# project. Without this the testing prompt resolved QUALITY.md to
+# /opt/project/QUALITY.md, one level above where the project is.
+PROJECT_ROLES = {"coder-1", "coder-2", "tester"}
+DEMO = "workspace/demo-project"
+
+
+def workdir_for(role, base=WORKDIR):
+    """Where a role actually runs: the repo root, or inside the demo project."""
+    return f"{base}/{DEMO}" if role in PROJECT_ROLES else base
 
 
 def git(*args, check=True):
@@ -316,14 +363,22 @@ def make_worktree(worker):
     path = WORKTREES / worker
     WORKTREES.mkdir(exist_ok=True)
     if path.exists():
-        git("worktree", "remove", "--force", str(path))
+        # Remove via git first. Calling git on a directory git no longer tracks
+        # prints "is not a working tree", which looked like a failure when it
+        # only meant the previous run had already cleaned up.
+        if git("worktree", "remove", "--force", str(path), check=False)[0] == 0:
+            ok(f"cleared the previous worktree for {worker}")
+        else:
+            import shutil
+            shutil.rmtree(path, ignore_errors=True)
+            git("worktree", "prune", check=False)
     # -B resets the branch so a rerun starts clean instead of stacking on the
     # previous run's commits.
     code, out = git("worktree", "add", "-B", branch, str(path))
     if code:
         return None
     ok(f"worktree {path.relative_to(ROOT)} on branch {branch}")
-    return f"{WORKDIR}/{WORKTREES.name}/{worker}"
+    return workdir_for(worker, f"{WORKDIR}/{WORKTREES.name}/{worker}")
 
 
 def drop_worktree(worker, merge=True):
@@ -351,7 +406,7 @@ def drop_worktree(worker, merge=True):
     return True
 
 
-def run_workers(workers, confirm="never"):
+def run_workers(workers, confirm="never", max_iterations=100, budget=None):
     """Run every worker concurrently, each in its own worktree.
 
     This is the N >= 2 fan-out for functional requirement 3. It is only real if
@@ -371,10 +426,15 @@ def run_workers(workers, confirm="never"):
 
     marks = {w: {"started": {}, "finished": {}} for w in workers}
     print(f"\n-- {len(workers)} workers in parallel --")
+    t_start = time.time()
+    # The budget is per worker, not shared: they start together, so a shared
+    # deadline would cut the first one short for no reason.
     with concurrent.futures.ThreadPoolExecutor(max_workers=len(workers)) as pool:
         futures = {
             w: pool.submit(run_role, w, confirm, workdirs[w],
-                           marks[w]["started"], marks[w]["finished"])
+                           marks[w]["started"], marks[w]["finished"],
+                           max_iterations,
+                           t_start + budget if budget else None)
             for w in workers
         }
         results = {w: f.result() for w, f in futures.items()}
@@ -424,6 +484,8 @@ def main():
     confirm, rest = "never", []
     workers = None
     do_merge = False
+    max_iterations = 100
+    budget = None
     i = 0
     while i < len(args):
         a = args[i]
@@ -438,6 +500,25 @@ def main():
             i += 1
         elif a == "--merge":
             do_merge, i = True, i + 1
+        elif a in ("--budget", "--max-iterations") and i + 1 < len(args):
+            try:
+                value = int(args[i + 1])
+            except ValueError:
+                bad(f"--{a.lstrip('-')} needs a whole number of seconds/turns")
+                return 1
+            budget, max_iterations = (value, max_iterations) if a == "--budget" \
+                else (budget, value)
+            i += 2
+        elif a.startswith("--budget=") or a.startswith("--max-iterations="):
+            flag, _, raw = a.partition("=")
+            try:
+                value = int(raw)
+            except ValueError:
+                bad(f"{flag} needs a whole number of seconds/turns")
+                return 1
+            budget, max_iterations = (value, max_iterations) if flag == "--budget" \
+                else (budget, value)
+            i += 1
         elif a in ("--check", "--run"):
             i += 1
         elif a.startswith("-"):
@@ -470,12 +551,14 @@ def main():
             drop_worktree(w, merge=True)
         return 0
     if workers:
-        result = run_workers(workers, confirm)
+        result = run_workers(workers, confirm, max_iterations, budget)
         if not result.get("conversations"):
             return 1
         failed = [w for w, cid in result["conversations"].items() if not cid]
         return 1 if failed else 0
-    run_role(rest[0] if rest else "architect", confirm=confirm)
+    run_role(rest[0] if rest else "architect", confirm=confirm,
+             max_iterations=max_iterations,
+             deadline=time.time() + budget if budget else None)
     return 0
 
 
