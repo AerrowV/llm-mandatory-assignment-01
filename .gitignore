@@ -250,3 +250,6 @@ openhands/state/*
 openhands/state/**/*.lock
 !openhands/state/agent-profiles/
 litellm/*.yml.bak
+
+# Per-worker git worktrees: nested repos, never committed.
+.worktrees/
