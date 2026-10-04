@@ -1,76 +1,32 @@
-# Ports and the proxy key come from .env at the repo root - compose reads that
-# file automatically for ${...} substitution, and env_file passes it into the
-# containers. .env is the only place these values are written; see .env.example.
+# LiteLLM routes each role alias to one of the two Ollama servers on the host;
+# OpenHands runs the agents. Both ports are published on 127.0.0.1 only.
 services:
-  # LiteLLM proxies the two local Ollama servers and is the only endpoint the
-  # agents talk to. Model -> endpoint routing lives in endpoints/config.yml,
-  # which scripts/config.py generates from .env. This proxy is
-  # toolchain-independent: the later CrewAI toolchain targets the same aliases
-  # on the same endpoints.
   litellm:
-    # Pinned by digest, not :latest. :latest resolves to a moving multi-arch
-    # index and had already drifted from the image this setup was tested
-    # against. This digest is the linux/arm64 manifest that was measured here
-    # (built 2026-08-30, litellm commit 95293834e833b2d2979f87d1bd2a5be45db6728a).
-    # On x86 replace it with the amd64 manifest of the same build:
-    #   sha256:5414e701cd8abce8713e7ca16d3e016345ca48a2e5cfe4efe3d2f22c42e45b77
     image: ghcr.io/berriai/litellm@sha256:32cfd7a427f6470033b4dcc9e75dfbea2aa32dbc298b0b511a40e962ce818362
     command: ["--config", "/app/config.yaml", "--port", "4000"]
     ports:
       - "${LITELLM_BIND}:4000"
     volumes:
       - ./endpoints/config.yml:/app/config.yaml:ro
-    # Supplies LITELLM_MASTER_KEY to the proxy. It must NOT also be declared as
-    # general_settings.master_key in config.yml: that moves auth onto LiteLLM's
-    # virtual-key path, which needs a database and then fails every agent turn
-    # with 400 "No connected db." while /v1/models keeps answering normally.
-    env_file:
-      - ./.env
+    env_file: .env
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:4000/health/liveliness')"]
       interval: 5s
-      timeout: 5s
       retries: 12
     extra_hosts:
       - "host.docker.internal:host-gateway"
-  # OpenHands agent server. The repo is mounted at /opt/project so the agents
-  # read and write docs/ and tickets/ in place.
+
   openhands:
-    # Pinned by digest for the same reason. This is agent-canvas 1.21.0,
-    # OpenHands commit fc6d890f7b21c71a17de60d50597c00355e235ea.
-    # On x86 use sha256:65b9dd60572a8f489d157998637d9aa58ccbc454878eeef62152d67399e962ac
     image: ghcr.io/openhands/agent-canvas@sha256:37575e4ece410efb267bee5a8e3119591a54e611fa0f75e06107f5d889e05c4c
     container_name: local-openhands
     depends_on:
       litellm:
         condition: service_healthy
-    # LLM credentials are injected from .env, not hardcoded here. The proxy and
-    # the agent must agree on the key, so both read the same file.
-    # NOTE: openhands/state/profiles/*.json hold the key as a literal string
-    # because OpenHands does not expand os.environ/ references in that field.
-    # It is safe only while every port stays bound to 127.0.0.1.
-    env_file:
-      - ./.env
+    env_file: .env
     ports:
       - "${AGENT_BIND}:8000"
     volumes:
-      # The repo at /opt/project: agents read and write docs/ and tickets/ in
-      # place. Official docs mount a project dir at /projects instead; /opt/
-      # project was chosen here so the working dir matches the assignment repo
-      # path, and it is what the conversation API verified above.
       - ./:/opt/project
-      # Worker worktrees. A worktree's .git file normally points at an absolute
-      # host path such as /Users/<you>/<repo>/.git/worktrees/<name>, which does
-      # not exist inside the container, so OpenHands' `git rev-parse` on the
-      # workspace failed with "fatal: not a git repository" and no conversation
-      # was created. The pipeline therefore creates worktrees with
-      # --relative-paths, so the pointer is relative and resolves from
-      # /opt/project/.worktrees/<name> inside the container. No second mount and
-      # no hardcoded host path needed.
-      - ./.worktrees:/opt/project/.worktrees
-      # Matches the official ~/.openhands mount point from the Agent Canvas
-      # setup docs. Profiles in state/profiles and state/agent-profiles are
-      # picked up from here, which the agent server confirmed in its logs.
       - ./openhands/state:/home/openhands/.openhands
     extra_hosts:
       - "host.docker.internal:host-gateway"

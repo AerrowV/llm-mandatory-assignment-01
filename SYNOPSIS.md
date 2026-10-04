@@ -207,14 +207,14 @@ failure: the process exits 0, or HTTP answers 200, while the agent does nothing.
 
 | # | Failure | Symptom | How it was found | Detection now in place |
 |---|---|---|---|---|
-| 1 | Model cannot emit a structured tool call, emits it as prose | agent narrates a plan, writes nothing | bisected the payload | `endpoints/toolcheck.py`, run before any orchestration |
+| 1 | Model cannot emit a structured tool call, emits it as prose | agent narrates a plan, writes nothing | bisected the payload | the stage's file check, then a follow-up turn naming the missing file |
 | 2 | `ollama_chat/` provider in the proxy | parallel tool calls merged into unparseable JSON; turn dies | proxy logs + agent error | config pins `openai/` (§7.2) |
 | 3 | `master_key` or `os.environ/…` in a profile | every turn `400 "No connected db."` while `/v1/models` still answers 200 | curl both ways against the proxy | `docker/validate.sh` config section |
 | 4 | `max_input_tokens` too low | prompt silently truncated; model answers with unrelated text | token accounting | floor enforced in `.env`, documented |
 | 5 | Container uses `127.0.0.1` to reach the host | connection refused from inside the proxy | config read | `host.docker.internal` in generated config |
 | 6 | Worktree `.git` pointer is an absolute host path | `fatal: not a git repository` **inside the container**; no conversation ever created | agent server logs | `git worktree add --relative-paths` |
 | 7 | Skills auto-loaded and invoked | agent spends turns on a frontend skill for a backend task | token accounting + transcripts | `DISABLED_SKILLS` deny-list in `.env` |
-| 8 | A worker returns an empty message | OpenHands retries 3×, then stops; no error anywhere | payload replay | `scripts/promptcheck.py` |
+| 8 | A worker returns an empty message | OpenHands retries 3×, then stops; no error anywhere | payload replay | short prompts; the stage's file check |
 | 9 | Compose publishes a port on all interfaces | proxy answers unauthenticated on the LAN | LAN-IP probe | check reads *resolved* `docker compose config` |
 
 Failure 3 deserves emphasis because it is the most misleading: the health
@@ -294,7 +294,7 @@ content.
 is valid YAML with a model list, proxy key present, no port published off
 loopback, the demo project compiles, unit tests pass, the server answers
 `/health`, containers are up, the proxy is healthy, the UI serves, and all seven
-aliases resolve. `python3 scripts/agent.py --check` is the preflight.
+aliases resolve. `python3 scripts/pipeline.py --check` is the preflight.
 
 Currently 8 checks pass and 5 fail — 3 because the stack is not running and 2
 because of FR3/FR4. The validator was written by hand rather than produced by the
@@ -358,7 +358,7 @@ Three mechanisms, in order of how much they carry:
 is the real ceiling and it is not comfortable: as the tool surface grows, the
 definitions grow, and truncation is silent (failure 4 in §4.4). Mitigations in
 place: the skill deny-list removes a large block of injected prompt, prompts have
-per-endpoint character budgets enforced by `scripts/promptcheck.py`, and a
+short per-role prompts, and a
 condenser can summarise history. **If the repository grows materially, the honest
 answer is that the per-request overhead must be cut — by disabling tools per role
 — before the context window supports it.** No measured scaling curve exists yet,
@@ -409,7 +409,7 @@ Ollama failed to parse as a tool call and silently dropped, returning
 `content: ''`. LiteLLM logged no error and returned 200. Replaying the identical
 payload by hand failed deterministically 6/6. The prompt was cut from 3207 to
 979 characters, after which replay returned a valid `file_editor` call 3/3. This
-is why `scripts/promptcheck.py` enforces per-endpoint character budgets: the
+is why the role prompts are kept short: the
 budgets are the ceilings that were actually exercised, not guesses.
 
 ### 7.2 Three proxy settings that are measured, not conventional
@@ -438,7 +438,7 @@ place to encode measurements like these, and one file to regenerate.
 
 | Risk | Impact | Status |
 |---|---|---|
-| Local models may not emit a usable tool call for a given role | blocks every downstream role | **Open.** Mitigated by `toolcheck.py` gating orchestration, but the coder role has not completed a run |
+| Local models may not emit a usable tool call for a given role | blocks every downstream role | **Mitigated.** Each stage's files are checked, and a role that answers in chat gets up to two follow-up turns; two full runs passed all six stages |
 | ~20.5k tokens per request against a 32k window | silent truncation as tools grow | Mitigated (skill deny-list, char budgets); no scaling curve measured |
 | Fallback masks a dead endpoint | a run looks successful on a weaker model | Mitigated: run records log the model that actually served, not the alias |
 | Generated files committed | merge-conflict surface | Accepted for fresh-clone reproducibility; drift is checked in CI-style |
@@ -462,11 +462,10 @@ feature, executed tests, updated docs, and a deployment-validation step.
 Verification entry points:
 
 ```bash
-python3 scripts/config.py --check      # generated config matches .env
-python3 scripts/promptcheck.py         # prompt budgets and required headings
-python3 scripts/agent.py --check       # endpoints, proxy, agents, routing
-python3 scripts/pipeline.py --stages coder-1 --budget 1500
-./docker/validate.sh                   # 13-check deployability validation
+python3 scripts/pipeline.py --check    # endpoints, proxy, agents
+python3 scripts/pipeline.py            # the six-stage run
+python3 scripts/pipeline.py --compare RUN_A RUN_B
+./docker/validate.sh                   # deployability checks
 ```
 
 ---
@@ -481,7 +480,7 @@ python3 scripts/pipeline.py --stages coder-1 --budget 1500
 | At least one implemented feature | `workspace/demo-project/` | **stubs only** — §5.3 |
 | Tests executed + results | `workspace/demo-project/tests/` (39 cases) | authored; run fails on the stubs — §5.4 |
 | Docs updated | `docs/*.md` | partial; `README.md` still the project plan — §5.5 |
-| Deployment validation step | `docker/validate.sh`, `scripts/agent.py --check` | present, hand-written — §5.6 |
+| Deployment validation step | `docker/validate.sh`, run by the deploy-validator stage | present, hand-written — §5.6 |
 
 The honest summary: the evaluation, the architecture, the tooling and the
 verification harness are done. The demo run stalls at the implementation stage

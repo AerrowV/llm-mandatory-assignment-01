@@ -31,6 +31,8 @@ are in `{{WORKDIR}}/TASK.md` and nowhere else, so read that before you write.
 Guessing them is what fails this task.
 
 Do these three actions in order, using the `file_editor` tool and no other.
+Make exactly one tool call per reply and wait for its result before the next:
+you cannot write the file until you have read `TASK.md`.
 
 1. Read `{{WORKDIR}}/TASK.md` with the `file_editor` tool, `view` command.
 
