@@ -1,22 +1,9 @@
 #!/usr/bin/env python3
-"""Run the OpenHands demo end to end and say plainly whether it worked.
+"""Run the demo end to end and say plainly whether it worked.
 
-    python3 scripts/demo.py                     # preflight, smoke test, demo run, verify
-    python3 scripts/demo.py --check             # preflight only, change nothing
-    python3 scripts/demo.py --smoke             # tool-calling smoke test only
-    python3 scripts/demo.py --task "..."        # custom task instead of the built-in one
-    python3 scripts/demo.py architect           # demo using a role prompt
-
-Four phases: preflight (are the two model servers and the stack up), smoke test
-(does a model return a *structured* tool call through LiteLLM), run (hand one
-task to an agent), verify (did the agent execute tools and land the artifact).
-
-The smoke test and the verify phase are separate on purpose. The smoke test
-proves OpenHands -> LiteLLM -> ollama can produce a tool call; verify proves
-OpenHands *executed* it. A green smoke test with a red verify localises the
-fault to the agent, not to the wiring.
-
-Standard library only. Stack plumbing is reused from agent.py; see SETUP.md.
+    python3 scripts/demo.py            # preflight, smoke test, run, verify
+    python3 scripts/demo.py --smoke    # tool-calling smoke test only
+    python3 scripts/demo.py --task "..." architect
 """
 
 import json
@@ -34,23 +21,14 @@ STATE = ROOT / "openhands" / "state" / "agent-canvas" / "conversations"
 ARTIFACTS = ROOT / "artifacts"
 
 # Absolute path inside the container, so the agent cannot invent a workspace.
-# /opt/project is where docker-compose.yml mounts this repo.
-DEMO_FILE = "/opt/project/artifacts/demo-report.md"
+DEMO_FILE = f"{agent.WORKDIR}/artifacts/demo-report.md"
 DEMO_FILE_LOCAL = ARTIFACTS / "demo-report.md"
 DEMO_MARKER = "Demo Report"
 
-DEFAULT_TASK = f"""Create the markdown file {DEMO_FILE} whose entire content is
-exactly these three lines:
-
-# {DEMO_MARKER}
-
-- stack: OpenHands + LiteLLM + two Ollama endpoints
-- endpoint A: architecture planning
-- endpoint B: coding
-
-Use the file_editor tool with command "create" and the absolute path above -
-file_editor rejects relative paths. Then read the file back with command "view"
-and confirm the content matches. Do not create any other file."""
+# Lives in prompts/ like every other role prompt, rendered with these values.
+DEFAULT_TASK = agent.render_prompt(
+    (agent.PROMPTS / "00-demo.md").read_text(), "demo", agent.WORKDIR,
+    DEMO_FILE=DEMO_FILE, DEMO_MARKER=DEMO_MARKER)
 
 TOOLS = [{
     "type": "function",
@@ -77,19 +55,15 @@ SMOKE_PROMPT = (f"Create the file {DEMO_FILE} containing the text 'OK'. "
 ERRORY = ("error", "invalid", "not found", "does not exist", "failed",
           "traceback", "denied")
 
-# An OpenHands request is ~20k tokens: 16k chars of system prompt plus 17 tool
-# definitions. A model declared below this gets its prompt silently truncated
-# by the proxy, and then it ignores the task and answers with unrelated text.
+# An OpenHands request is ~20k tokens. A model declared below this gets its
+# prompt silently truncated, then ignores the task and answers with unrelated text.
 NEEDS_CONTEXT = 24576
-
 
 # ---------------------------------------------------------------- phases
 
-
 def preflight(start):
-    """Check docker, both model servers and the stack. Returns bool."""
     print("\n== preflight ==")
-    if agent.get("http://localhost:4000/health/liveliness", timeout=3) is None:
+    if agent.get(f"{agent.LITELLM}/health/liveliness", timeout=3) is None:
         if not start:
             agent.bad("stack is down - start it with: python3 scripts/agent.py")
             return False
@@ -98,14 +72,7 @@ def preflight(start):
             return False
     return agent.show_state()
 
-
 def context_guard():
-    """Fail loudly if a model's context window cannot hold an agent request.
-
-    LiteLLM truncates the prompt to the declared max_input_tokens without
-    telling anyone, so the agent just starts ignoring its task. This is the
-    check that would have caught it.
-    """
     print("\n== context budget ==")
     data = agent.get(f"{agent.LITELLM}/v1/model/info", timeout=10,
                      headers={"Authorization": f"Bearer {agent.KEY}"})
@@ -124,12 +91,7 @@ def context_guard():
             healthy = False
     return healthy
 
-
 def smoke_test():
-    """Ask each model for one structured tool call, straight through LiteLLM.
-
-    This is the layer below the agent: no OpenHands, no conversation state.
-    """
     print("\n== smoke test: structured tool call through LiteLLM ==")
     for model in ("coding-model", "architecture-model"):
         data = agent.get(f"{agent.LITELLM}/v1/chat/completions", {
@@ -158,24 +120,21 @@ def smoke_test():
             text = (message.get("content") or "")[:90].replace("\n", " ")
             agent.warn(f"{model}: no tool_calls, text was: {text!r}")
 
-
 def resolve_task(argv, custom):
-    """Decide what the agent gets. Returns (prompt, knows_the_artifact)."""
     role = next((a for a in argv if a in agent.ROLES), None)
     if role:
-        path = next((p for p in sorted(agent.PROMPTS.glob("0*.md"))
-                     if p.stem.split("-", 1)[1] == role), None)
-        agent.ok(f"role prompt prompts/{path.name}" if path else f"role {role}")
-        return (path.read_text() if path else role), False
+        stem = agent.ROLES[role]
+        path = agent.PROMPTS / f"{stem}.md"
+        agent.ok(f"role prompt prompts/{path.name}")
+        return agent.render_prompt(path.read_text(), role,
+                                   agent.workdir_for(role)), False
     if custom is not None:
         agent.ok("custom task, artifact check will be skipped")
         return custom, False
     agent.ok(f"built-in demo task, expects {DEMO_FILE}")
     return DEFAULT_TASK, True
 
-
 def wait(cid, timeout):
-    """Poll until the conversation stops running. Returns its final status."""
     deadline = time.time() + timeout
     last = None
     while time.time() < deadline:
@@ -187,12 +146,7 @@ def wait(cid, timeout):
         time.sleep(5)
     return f"timeout after {timeout}s"
 
-
 def events(cid):
-    """Every event the agent produced, read from the mounted state dir.
-
-    The API hands back a dashed uuid; the state directory drops the dashes.
-    """
     directory = STATE / cid.replace("-", "") / "events"
     if not directory.is_dir():
         agent.warn(f"no event log on disk for {cid} (has the state volume moved?)")
@@ -205,9 +159,7 @@ def events(cid):
             continue
     return out
 
-
 def reply_text(log):
-    """The last thing the assistant said, however long it is."""
     said = [e for e in log if e.get("kind") == "MessageEvent"
             and e.get("source") == "agent"]
     if not said:
@@ -216,13 +168,7 @@ def reply_text(log):
     return "".join(part.get("text", "") for part in content
                    if isinstance(part, dict)).strip()
 
-
 def failed(observation):
-    """Did a tool result report a failure?
-
-    OpenHands sets is_error on the observation, which is authoritative. The
-    keyword scan is only a fallback for observations without that field.
-    """
     if not observation:
         return False
     if "is_error" in observation:
@@ -230,9 +176,7 @@ def failed(observation):
     text = json.dumps(observation).lower()
     return any(word in text for word in ERRORY)
 
-
 def verify(cid, artifact=DEMO_FILE_LOCAL, marker=DEMO_MARKER):
-    """Did the agent execute tools, and did the artifact land? Returns bool."""
     print("\n== verify ==")
     log = events(cid)
     actions = [e for e in log if e.get("kind") == "ActionEvent"]
@@ -260,28 +204,26 @@ def verify(cid, artifact=DEMO_FILE_LOCAL, marker=DEMO_MARKER):
     if artifact is None:
         agent.warn("artifact check skipped (custom task, no known output file)")
     elif not artifact.exists():
-        agent.bad(f"missing {artifact.relative_to(ROOT)}")
+        agent.bad(f"missing {agent.rel(artifact)}")
     else:
         text = artifact.read_text()
         first = text.lstrip().splitlines()[0] if text.strip() else ""
         if not text.strip():
-            agent.bad(f"{artifact.relative_to(ROOT)} is empty")
+            agent.bad(f"{agent.rel(artifact)} is empty")
         elif marker and marker not in text:
-            agent.bad(f"{artifact.relative_to(ROOT)} has no '{marker}'")
+            agent.bad(f"{agent.rel(artifact)} has no '{marker}'")
         elif not first.startswith("#"):
-            agent.bad(f"{artifact.relative_to(ROOT)} starts {first[:40]!r}, "
+            agent.bad(f"{agent.rel(artifact)} starts {first[:40]!r}, "
                       "expected a markdown heading")
             agent.warn("the tool call worked but the content is not what was "
                        "asked for - a small-model limit, not a wiring fault")
         else:
-            agent.ok(f"{artifact.relative_to(ROOT)} "
+            agent.ok(f"{agent.rel(artifact)} "
                      f"({len(text.splitlines())} lines)")
             landed = True
     return landed
 
-
 def record(summary):
-    """Keep the run as evidence under artifacts/runs/<timestamp>/."""
     try:
         run_dir = ARTIFACTS / "runs" / datetime.now(timezone.utc).strftime(
             "%Y%m%dT%H%M%SZ")
@@ -290,22 +232,22 @@ def record(summary):
     except OSError as exc:
         agent.warn(f"could not record run: {exc}")
         return
-    print(f"\nrecorded in {run_dir.relative_to(ROOT)}")
-
+    print(f"\nrecorded in {agent.rel(run_dir)}")
 
 # ---------------------------------------------------------------- main
 
-
 def flag_value(argv, name, fallback):
-    """The value after a flag, if the user gave one."""
     if name not in argv:
         return fallback
     after = argv[argv.index(name) + 1:]
     return after[0] if after and not after[0].startswith("-") else None
 
-
 def main():
     argv = sys.argv[1:]
+    if any(a in ("-h", "--help", "help") for a in argv):
+        print((__doc__ or "").strip())
+        return 0
+
     check_only = "--check" in argv
     smoke_only = "--smoke" in argv
     custom = flag_value(argv, "--task", None)
@@ -340,12 +282,11 @@ def main():
 
     record({"conversation_id": cid, "status": status, "tools_executed":
             sum(1 for e in events(cid) if e.get("kind") == "ActionEvent"),
-            "artifact": str(artifact.relative_to(ROOT)) if artifact else None,
+            "artifact": str(agent.rel(artifact)) if artifact else None,
             "artifact_ok": passed})
     print(f"\ndemo {'PASSED' if passed else 'FAILED'} - "
           f"logs: docker compose logs openhands")
     return 0 if passed else 1
-
 
 if __name__ == "__main__":
     sys.exit(main())

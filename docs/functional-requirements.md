@@ -15,11 +15,13 @@ Roles are not hardcoded into the agent. They are a chain of three indirections, 
 one config edit re-points a role at a different model server:
 
 ```
-role prompt (openhands/prompts/0*.md)
-  -> agent profile  (openhands/state/agent-profiles/<role>.json -> llm_profile_ref)
-  -> LLM profile    (openhands/state/profiles/<role>.json -> "openai/<alias>")
-  -> LiteLLM alias  (endpoints/config.yaml -> api_base + model)
-  -> endpoint A :11434  or  endpoint B :11435
+.env                                   the only file that is edited by hand
+  +-> agent profile  (openhands/state/agent-profiles/<role>.json -> llm_profile_ref)
+  +-> LLM profile    (openhands/state/profiles/<role>.json -> "openai/<alias>")
+  +-> LiteLLM alias  (endpoints/config.yml -> api_base + model)
+       -> endpoint A :11434  or  endpoint B :11435
+
+role prompt (prompts/0*.md)            read at run time, names no server
 ```
 
 The LLM profile names a **LiteLLM alias**, never a server. Which physical endpoint
@@ -53,7 +55,7 @@ predecessor's files and writes its own into the same tree. This part is real.
 
 ## 1. Architecture — mechanism proven
 
-`openhands/prompts/01-architect.md` binds the role to one artifact per required output:
+`prompts/01-architect.md` binds the role to one artifact per required output:
 component decomposition → `docs/components.md`, interface contracts →
 `docs/api.md`, deployment topology → `docs/deployment.md`, and decision records →
 `docs/decisions.md`. It closes with a mandatory `docs/handoff.md` so the next role
@@ -75,7 +77,7 @@ generated yet.
 
 ## 2. Tech lead — mechanism proven
 
-`openhands/prompts/02-tech-lead.md` consumes `docs/handoff.md` plus the rest of `docs/`
+`prompts/02-tech-lead.md` consumes `docs/handoff.md` plus the rest of `docs/`
 and emits one ticket file per task carrying exactly the three fields the
 requirement names: an explicit **scope boundary** ("what it does NOT cover"),
 **acceptance criteria** phrased as 2–3 checkable conditions, and **declared
@@ -134,7 +136,7 @@ round trip straight through LiteLLM with no OpenHands involved. A green smoke
 test with a red verify localises the fault to the agent rather than the wiring —
 which is exactly the diagnosis that unblocked this project.
 
-*The role layer.* `openhands/prompts/04-testing.md` requires creating and running tests
+*The role layer.* `prompts/04-testing.md` requires creating and running tests
 and emitting a quality report with test results, static checks, and known
 limitations/risks — the three required subsections are all named in the prompt.
 
@@ -145,7 +147,7 @@ finishing before a run means anything.
 
 ## 5. Documentation — NOT MET
 
-The prompt is complete; the deliverable is not. `openhands/prompts/05-documentation.md` is
+The prompt is complete; the deliverable is not. `prompts/05-documentation.md` is
 the most complete of the six: developer and user
 docs, README setup/config/usage/troubleshooting, API reference with auth,
 endpoints, parameters, responses and errors, operational runbooks (deploy,
@@ -182,9 +184,11 @@ toolchain validates *programmatically* rather than by assertion:
   Docker, probes both Ollama endpoints, confirms both containers answer, and
   prints the live routing table from `/v1/models` — then changes nothing. It
   exits non-zero if an endpoint is down.
-- **Environment/config documentation.** `SETUP.md` §2–3 plus the per-service file
-  table; `endpoints/config.yml` and the LLM profiles are committed, plain JSON/YAML
-  with inline rationale, so the intended config is reviewable in git.
+- **Environment/config documentation.** `SETUP.md` §2–3, the file table, and
+  `.env.example`, which documents every setting in one place. `endpoints/config.yml`
+  and the profile files are generated from `.env` by `scripts/config.py` and are
+  committed, so the intended config is reviewable in git;
+  `python3 scripts/config.py --check` fails if they have drifted from `.env`.
 - **Deployment checklist.** `SETUP.md`'s four-failure-mode section is the
   pre-flight check an operator runs first.
 

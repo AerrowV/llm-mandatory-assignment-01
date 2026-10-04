@@ -1,19 +1,8 @@
 #!/usr/bin/env python3
-"""Check whether a local model emits real tool calls, or just writes them as text.
+"""Does a model emit a *structured* tool call, or prose that looks like one?
 
-A model can pass a chat conversation and still be useless to an agent: if it
-returns the call as a string in `content` instead of in `message.tool_calls`,
-OpenHands never executes anything and the agent just narrates. This asks for one
-tool call and checks where it came back.
-
-    python3 endpoints/toolcheck.py --port 11435 --model qwen3:8b
-    python3 endpoints/toolcheck.py --port 11435 --model qwen3:8b --via-proxy
-
---via-proxy routes through the LiteLLM proxy instead of talking to the model
-server directly, which is the path an agent actually takes. Use both: a model
-that passes directly but fails via the proxy is a proxy bug, not a model bug.
-
-Standard library only. Exits 0 if native tool calls came back, 1 otherwise.
+    python3 endpoints/toolcheck.py --endpoint B
+    python3 endpoints/toolcheck.py --endpoint B --via-proxy --model tester
 """
 
 import argparse
@@ -21,8 +10,15 @@ import json
 import sys
 import urllib.error
 import urllib.request
+from pathlib import Path
 
-KEY = "sk-local-not-secure"  # throwaway loopback key, matches endpoints/config.yml
+# config.py is the only reader of .env, so this cannot disagree with the stack.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+from config import load_env  # noqa: E402
+
+ENV = load_env()
+KEY = ENV["LITELLM_MASTER_KEY"]
+PROXY = ENV["LITELLM_URL"]
 
 TOOL = {
     "type": "function",
@@ -42,7 +38,6 @@ TOOL = {
 
 PROMPT = "Write the file /tmp/check.txt containing the word OK. Use the tool."
 
-
 def post(url, payload, headers=None, timeout=180):
     body = json.dumps(payload).encode()
     req = urllib.request.Request(url, data=body, headers={
@@ -55,9 +50,7 @@ def post(url, payload, headers=None, timeout=180):
     except Exception as e:
         return {"_error": f"{type(e).__name__}: {e}"}
 
-
 def report(resp):
-    """Return (verdict, detail). verdict is 'native' | 'text' | 'failed'."""
     if "_error" in resp or "_http_error" in resp:
         return "failed", json.dumps(resp)[:400]
 
@@ -81,26 +74,43 @@ def report(resp):
     kind = "text that looks like a call" if looks_like_call else "prose"
     return "text", f"{kind}, {len(text)} chars: {text[:200]!r}"
 
+def first_alias(letter):
+    """A role alias LiteLLM actually serves for this endpoint."""
+    values = load_env()
+    roles = [r.strip() for r in values[f"ENDPOINT_{letter}_ROLES"].split(",") if r.strip()]
+    if not roles:
+        raise SystemExit(f"no roles are routed to endpoint {letter} in .env")
+    return roles[0]
+
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--port", type=int, default=11434)
-    p.add_argument("--model", required=True)
+    p.add_argument("--endpoint", choices=("A", "B"), default="A",
+                   help="which .env endpoint to check; sets --port and --model")
+    p.add_argument("--port", type=int, help="override the endpoint's port")
+    p.add_argument("--model", help="override the endpoint's model")
     p.add_argument("--via-proxy", action="store_true",
-                   help="go through LiteLLM on :4000 using the alias name")
+                   help="go through LiteLLM using a role alias as the model name")
     p.add_argument("--stream", action="store_true",
                    help="also test streaming; OpenHands always streams")
     args = p.parse_args()
+    host = ENV[f"ENDPOINT_{args.endpoint}_HOST"]
+    port = args.port or int(ENV[f"ENDPOINT_{args.endpoint}_PORT"])
 
+    # LiteLLM only knows role aliases, never the physical model name, so an
+    # un-overridden --via-proxy has to send an alias. Direct-to-endpoint calls
+    # want the real model.
     if args.via_proxy:
-        url, headers = "http://localhost:4000/v1/chat/completions", {
+        model = args.model or first_alias(args.endpoint)
+        url, headers = f"{PROXY}/v1/chat/completions", {
             "Authorization": f"Bearer {KEY}"}
-        label = f"proxy:4000 -> {args.model}"
+        label = f"proxy {PROXY} -> {model}"
     else:
-        url, headers = f"http://localhost:{args.port}/v1/chat/completions", {}
-        label = f":{args.port} -> {args.model}"
+        model = args.model or ENV[f"ENDPOINT_{args.endpoint}_MODEL"]
+        url, headers = f"http://{host}:{port}/v1/chat/completions", {}
+        label = f"endpoint {args.endpoint} {host}:{port} -> {model}"
 
-    payload = {"model": args.model,
+    payload = {"model": model,
                "messages": [{"role": "user", "content": PROMPT}],
                "tools": [TOOL], "temperature": 0, "max_tokens": 512}
 
@@ -114,10 +124,9 @@ def main():
         req = urllib.request.Request(url, data=json.dumps(payload).encode(),
                                      headers={"Content-Type": "application/json",
                                               **headers})
-        # Group streamed fragments by tool-call index, exactly as a strict
-        # client does. Concatenating everything into one buffer would hide the
-        # bug this script exists to catch: a proxy that emits every parallel
-        # call under index=0, merging two valid calls into one unparseable one.
+        # Group fragments by tool-call index as a strict client does. One
+        # buffer would hide the bug this catches: parallel calls all emitted
+        # under index=0, merging two valid calls into one unparseable one.
         by_index, finish = {}, ""
         try:
             with urllib.request.urlopen(req, timeout=180) as r:
@@ -166,7 +175,6 @@ def main():
 
     print(f"\n  VERDICT: {'PASS - can drive an agent' if native else 'FAIL - not tool-call capable'}")
     return 0 if native else 1
-
 
 if __name__ == "__main__":
     sys.exit(main())

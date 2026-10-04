@@ -1,0 +1,282 @@
+{
+  "meta": {
+    "started": "20261004T190628Z",
+    "finished": "20261004T192116Z",
+    "wall_clock_s": 888.7,
+    "confirmation": "never",
+    "stages_requested": [
+      "architect",
+      "techlead",
+      "coder-1",
+      "tester",
+      "docs",
+      "deploy-validator"
+    ],
+    "budget_s": 1200,
+    "roles": [
+      "architect",
+      "coder-1",
+      "coder-2",
+      "deploy-validator",
+      "docs",
+      "techlead",
+      "tester"
+    ],
+    "routing": {
+      "endpoint A": {
+        "url": "http://127.0.0.1:11434",
+        "model": "qwen2.5:3b",
+        "roles": [
+          "architect",
+          "techlead",
+          "docs"
+        ]
+      },
+      "endpoint B": {
+        "url": "http://127.0.0.1:11435",
+        "model": "llama3.1:8b",
+        "roles": [
+          "coder-1",
+          "coder-2",
+          "tester",
+          "deploy-validator"
+        ]
+      }
+    }
+  },
+  "stages": [
+    {
+      "role": "architect",
+      "title": "Architecture",
+      "fr": "FR1",
+      "workdir": "/opt/project",
+      "alias": "architect",
+      "routed_to": [
+        "A",
+        "qwen2.5:3b",
+        "127.0.0.1:11434"
+      ],
+      "confirmation": "never",
+      "conversations": {
+        "architect": "0244a17d-9239-467f-8f85-a7b2a474673e"
+      },
+      "expect": [
+        "docs/components.md",
+        "docs/api.md",
+        "docs/deployment.md",
+        "docs/decisions.md",
+        "docs/handoff.md"
+      ],
+      "passed": true,
+      "evidence": [],
+      "nudges": [],
+      "duration_s": 115.4,
+      "artifacts": [
+        "docs/components.md",
+        "docs/api.md",
+        "docs/deployment.md",
+        "docs/decisions.md",
+        "docs/handoff.md"
+      ]
+    },
+    {
+      "role": "techlead",
+      "title": "Tech lead",
+      "fr": "FR2",
+      "workdir": "/opt/project",
+      "alias": "techlead",
+      "routed_to": [
+        "A",
+        "qwen2.5:3b",
+        "127.0.0.1:11434"
+      ],
+      "confirmation": "never",
+      "conversations": {
+        "techlead": "16e981cc-3389-4b49-8266-235ea7e5b097"
+      },
+      "expect": [
+        "tickets/list.md"
+      ],
+      "passed": true,
+      "evidence": [
+        "tickets/*.md: 3 files: tickets/001-storage.md, tickets/002-server.md, tickets/003-testing.md"
+      ],
+      "nudges": [
+        [
+          "tickets/list.md"
+        ]
+      ],
+      "duration_s": 55.3,
+      "artifacts": [
+        "tickets/list.md",
+        "tickets/003-testing.md",
+        "tickets/002-server.md",
+        "tickets/001-storage.md"
+      ]
+    },
+    {
+      "role": "coder-1",
+      "title": "Implementation, two workers in parallel",
+      "fr": "FR3",
+      "workdir": "/opt/project/workspace/demo-project",
+      "alias": "coder-1",
+      "routed_to": [
+        "B",
+        "llama3.1:8b",
+        "127.0.0.1:11435"
+      ],
+      "confirmation": "never",
+      "conversations": {
+        "coder-1": "41b7a287-7823-40c4-b3a1-04c907c0a042",
+        "coder-2": "34caa308-5db7-4ea9-87b4-e25e1e0363f1"
+      },
+      "expect": [
+        "workspace/demo-project/src/todoapp/storage.py",
+        "workspace/demo-project/src/todoapp/server.py"
+      ],
+      "passed": true,
+      "evidence": [],
+      "marks": {
+        "coder-1": {
+          "started": {
+            "cid": "41b7a287-7823-40c4-b3a1-04c907c0a042",
+            "t0": 1791140963.086459
+          },
+          "finished": {
+            "cid": "41b7a287-7823-40c4-b3a1-04c907c0a042",
+            "t1": 1791141193.841742
+          }
+        },
+        "coder-2": {
+          "started": {
+            "cid": "34caa308-5db7-4ea9-87b4-e25e1e0363f1",
+            "t0": 1791140963.771359
+          },
+          "finished": {
+            "cid": "34caa308-5db7-4ea9-87b4-e25e1e0363f1",
+            "t1": 1791141214.49861
+          }
+        }
+      },
+      "workdirs": {
+        "coder-1": "/opt/project/.worktrees/coder-1/workspace/demo-project",
+        "coder-2": "/opt/project/.worktrees/coder-2/workspace/demo-project"
+      },
+      "merges": {
+        "coder-1": {
+          "files": 1,
+          "sha": "9587b3e",
+          "integrated": [
+            "workspace/demo-project/src/todoapp/storage.py"
+          ],
+          "ok": true,
+          "worktree_removed": true
+        },
+        "coder-2": {
+          "files": 1,
+          "sha": "acfb3fb",
+          "integrated": [
+            "workspace/demo-project/src/todoapp/server.py"
+          ],
+          "ok": true,
+          "worktree_removed": true
+        }
+      },
+      "duration_s": 252.8,
+      "artifacts": [
+        "workspace/demo-project/src/todoapp/storage.py",
+        "workspace/demo-project/src/todoapp/server.py"
+      ]
+    },
+    {
+      "role": "tester",
+      "title": "Testing and quality",
+      "fr": "FR4",
+      "workdir": "/opt/project/workspace/demo-project",
+      "alias": "tester",
+      "routed_to": [
+        "B",
+        "llama3.1:8b",
+        "127.0.0.1:11435"
+      ],
+      "confirmation": "never",
+      "conversations": {
+        "tester": "1ad94a41-69c4-4a1e-9235-772574121090"
+      },
+      "expect": [
+        "workspace/demo-project/QUALITY.md"
+      ],
+      "passed": true,
+      "evidence": [],
+      "nudges": [
+        [
+          "workspace/demo-project/QUALITY.md"
+        ]
+      ],
+      "duration_s": 276.0,
+      "artifacts": [
+        "workspace/demo-project/QUALITY.md"
+      ]
+    },
+    {
+      "role": "docs",
+      "title": "Documentation",
+      "fr": "FR5",
+      "workdir": "/opt/project/workspace/demo-project",
+      "alias": "docs",
+      "routed_to": [
+        "A",
+        "qwen2.5:3b",
+        "127.0.0.1:11434"
+      ],
+      "confirmation": "never",
+      "conversations": {
+        "docs": "75cefc7f-83db-4cc2-9ec4-5159ee862065"
+      },
+      "expect": [
+        "workspace/demo-project/README.md"
+      ],
+      "passed": true,
+      "evidence": [],
+      "nudges": [
+        [
+          "workspace/demo-project/README.md"
+        ]
+      ],
+      "duration_s": 65.4,
+      "artifacts": [
+        "workspace/demo-project/README.md"
+      ]
+    },
+    {
+      "role": "deploy-validator",
+      "title": "Deployment validation",
+      "fr": "FR6",
+      "workdir": "/opt/project",
+      "alias": "deploy-validator",
+      "routed_to": [
+        "B",
+        "llama3.1:8b",
+        "127.0.0.1:11435"
+      ],
+      "confirmation": "never",
+      "conversations": {
+        "deploy-validator": "ddd8b675-5077-4382-9fda-f8a30740bcf4"
+      },
+      "expect": [
+        "docs/deployment-validation.md"
+      ],
+      "passed": true,
+      "evidence": [],
+      "precommand": {
+        "command": "./docker/validate.sh",
+        "exit": 1
+      },
+      "nudges": [],
+      "duration_s": 115.5,
+      "artifacts": [
+        "docs/deployment-validation.md"
+      ]
+    }
+  ]
+}

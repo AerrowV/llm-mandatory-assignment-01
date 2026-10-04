@@ -1,31 +1,15 @@
 #!/usr/bin/env python3
-"""Bring up the stack, show its state, and hand one role to an agent.
+"""Stack control and single-role runs.
 
-    python3 scripts/agent.py                 # start everything, run the architect
-    python3 scripts/agent.py tester          # run a different role
-    python3 scripts/agent.py "add a /health route"
-    python3 scripts/agent.py --check         # just report state, change nothing
-    python3 scripts/agent.py --check --run    # report state, then run a role
-
-    python3 scripts/agent.py --confirm risky coder
-    python3 scripts/agent.py --confirm always architect
-
-Roles are architect, techlead, coder, tester, docs, deploy-validator. Each has
-its own agent profile, so each resolves to its own LiteLLM alias.
-
---confirm is the control mechanism for non-functional requirement 1:
-    never   no prompts; the only setting an unattended pipeline can use
-    risky   ask before shell commands and destructive file operations
-    always  ask before every action
-
-python3 scripts/agent.py --workers coder-1,coder-2   # run both in parallel
-    python3 scripts/agent.py --workers coder-1 --merge    # then merge the branches
-
-Standard library only. See SETUP.md for what the pieces are.
+    python3 scripts/agent.py --check          # preflight, changes nothing
+    python3 scripts/agent.py coder-1 coder-2 --workers coder-1,coder-2
+    python3 scripts/agent.py architect        # run one role prompt
+    python3 scripts/agent.py coder-1 --yes    # skip confirmation prompts
 """
 
 import concurrent.futures
 import json
+import socket
 import subprocess
 import sys
 import time
@@ -33,64 +17,87 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+from config import (  # noqa: E402  sibling module, and the single place .env is read
+    CONFIG_YML,
+    ROLES,
+    WORKER_MODULE,
+    load_env,
+    sync as sync_config,
+)
+
 ROOT = Path(__file__).resolve().parent.parent
-PROMPTS = ROOT / "openhands" / "prompts"
-LITELLM = "http://localhost:4000"
-AGENT = "http://localhost:8000"
+PROMPTS = ROOT / "prompts"
+FRAGMENTS = PROMPTS / "fragments"
 API_KEY = ROOT / "openhands" / "state" / "agent-canvas" / "api-key.txt"
-WORKDIR = "/opt/project"  # where the repo is mounted inside the container
 
-# The assignment wants two separate model servers, not two models on one.
-SERVERS = [("endpoint A", 11434), ("endpoint B", 11435)]
-KEY = "sk-local-not-secure"  # throwaway loopback key, matches endpoints/.env
+# Every setting below comes from .env, the only file to edit. `python3
+# scripts/config.py` prints what the current file means.
+ENV = load_env()
 
-# Role -> prompt file stem. The role name is also the LiteLLM alias and the
-# name of its agent profile, so `run_role("architect")` resolves all three
-# from this one table.
-#
-# coder-1 and coder-2 are the two parallel workers. They share one prompt and
-# one model, and are distinguished only by name, so the pipeline can point
-# each at a different git worktree and run them concurrently. That is the
-# N >= 2 worker fan-out for functional requirement 3.
-ROLES = {
-    "architect": "01-architect",
-    "techlead": "02-tech-lead",
-    "coder-1": "03-implementation",
-    "coder-2": "03-implementation",
-    "tester": "04-testing",
-    "docs": "05-documentation",
-    "deploy-validator": "06-deployment",
-}
+LITELLM = ENV["LITELLM_URL"]
+AGENT = ENV["AGENT_URL"]
+KEY = ENV["LITELLM_MASTER_KEY"]
+WORKDIR = ENV["WORKDIR"]  # where the repo is mounted inside the container
+DEMO = ENV["DEMO_PROJECT"]
+MAX_ITERATIONS = int(ENV["MAX_ITERATIONS"])
+STAGE_BUDGET = int(ENV["STAGE_BUDGET"])
+DEFAULT_CONFIRMATION = ENV["CONFIRMATION"]
 
-# Non-functional requirement 1 wants a control mechanism: ask-before-edit, or
-# plan + diffs reviewed before execution. OpenHands exposes these as a
-# confirmation policy per conversation, so it is a run-time choice rather than
-# a hardcoded constant. "never" keeps unattended pipeline runs possible;
-# "risky" gates shell commands and destructive file operations, which is the
-# closest available thing to ask-before-run.
+# The assignment requires two separate servers, not two models on one.
+SERVERS = [(n, ENV[f"ENDPOINT_{l}_HOST"], int(ENV[f"ENDPOINT_{l}_PORT"]))
+           for n, l in (("endpoint A", "A"), ("endpoint B", "B"))]
+
+# NFR1 control mechanism. "risky" is the closest thing to ask-before-run: it
+# gates shell commands and destructive file ops. "never" allows unattended runs.
 CONFIRMATION = {
     "never": {"kind": "NeverConfirm"},
     "risky": {"kind": "ConfirmRisky"},
     "always": {"kind": "AlwaysConfirm"},
 }
 
-DONE = {"finished", "error", "stopped", "terminated", "paused", "idle"}
+# "stuck" is OpenHands' loop detector giving up. It is terminal too: missing
+# it here left the pipeline polling a dead conversation for two hours.
+DONE = {"finished", "error", "stopped", "terminated", "paused", "idle", "stuck"}
 
+def rel(path):
+    p = Path(path).resolve()
+    try:
+        return str(p.relative_to(ROOT))
+    except ValueError:
+        return str(p)
 
 def ok(msg):
     print(f"  [ok]   {msg}")
 
-
 def warn(msg):
     print(f"  [warn] {msg}")
-
 
 def bad(msg):
     print(f"  [FAIL] {msg}")
 
+def probe_state(url, timeout=5):
+    """Why a URL is unreachable, in words a reader can act on.
+
+    get() returns None for a refused connection, a timeout and a proxy 403
+    alike. Those need different fixes, so --check must not call all of them
+    "not running".
+    """
+    try:
+        with urllib.request.urlopen(url, timeout=timeout):
+            return "ok"
+    except urllib.error.HTTPError as exc:
+        if exc.code in (403, 407):
+            return "blocked by a proxy or firewall (HTTP %d)" % exc.code
+        return "answered HTTP %d" % exc.code
+    except urllib.error.URLError as exc:
+        if isinstance(getattr(exc, "reason", None), socket.timeout):
+            return "timed out"
+        return "not running (connection refused)"
+    except (OSError, ValueError):
+        return "not running"
+
 
 def get(url, payload=None, timeout=30, headers=None):
-    """HTTP GET or POST, returns parsed JSON or None if unreachable."""
     hdrs = {"Content-Type": "application/json", **(headers or {})}
     data = json.dumps(payload).encode() if payload is not None else None
     req = urllib.request.Request(url, data=data, headers=hdrs,
@@ -112,23 +119,23 @@ def get(url, payload=None, timeout=30, headers=None):
     except json.JSONDecodeError:
         return {}  # reachable, but served HTML rather than JSON
 
-
 def agent_api(path, payload=None, timeout=300):
-    """Call the OpenHands server with its session key."""
     if not API_KEY.exists():
         bad(f"missing {API_KEY} - is the stack running?")
         return None
     return get(f"{AGENT}{path}", payload, timeout,
                {"X-Session-API-Key": API_KEY.read_text().strip()})
 
-
-def models_on(port):
-    data = get(f"http://localhost:{port}/api/tags", timeout=5)
+def models_on(host, port):
+    data = get(f"http://{host}:{port}/api/tags", timeout=5)
     return None if data is None else [m["name"] for m in data.get("models", [])]
 
-
 def start_stack():
-    """docker compose up, then wait for both services to answer."""
+    try:
+        sync_config()
+    except Exception as exc:  # ConfigError, or an unreadable .env
+        bad(f".env is not usable: {exc}")
+        return False
     subprocess.run(["docker", "compose", "up", "-d"], cwd=ROOT,
                    capture_output=True, text=True)
     for name, url in (("litellm", f"{LITELLM}/health/liveliness"), ("openhands", AGENT)):
@@ -139,7 +146,7 @@ def start_stack():
         else:
             bad(f"{name} never came up - docker compose logs --tail=40 {name}")
             return False
-    # The API key is written during startup, after the port opens.
+    # Written during startup, after the port opens.
     for _ in range(15):
         if API_KEY.exists():
             return True
@@ -147,43 +154,57 @@ def start_stack():
     bad(f"openhands never wrote {API_KEY}")
     return False
 
-
 def show_state():
+    print("\n-- configured in .env --")
+    for name, url, model, served in config_rows():
+        print(f"  {name:<11} {url:<24} {model}")
+        print(f"  {'':<11} roles: {', '.join(served)}")
+    print(f"  key         {KEY[:6]}... ({len(KEY)} chars, throwaway loopback key)")
+
     print("\n-- model servers --")
     up = True
-    for name, port in SERVERS:
-        found = models_on(port)
+    for name, host, port in SERVERS:
+        found = models_on(host, port)
         if found is None:
-            bad(f"{name}  localhost:{port}  not running")
+            bad(f"{name}  {host}:{port}  "
+                + probe_state(f"http://{host}:{port}/api/tags"))
             up = False
         else:
-            ok(f"{name}  localhost:{port}  {', '.join(found) or 'no models'}")
+            ok(f"{name}  {host}:{port}  {', '.join(found) or 'no models'}")
 
     print("\n-- stack --")
     for name, url in (("litellm", f"{LITELLM}/health/liveliness"), ("openhands", AGENT)):
-        (ok if get(url, timeout=5) is not None else bad)(f"{name:<10} {url}")
+        if get(url, timeout=5) is not None:
+            ok(f"{name:<10} {url}")
+        else:
+            bad(f"{name:<10} {url}  " + probe_state(url))
 
     print("\n-- routing --")
     data = get(f"{LITELLM}/v1/models", timeout=10,
                headers={"Authorization": f"Bearer {KEY}"})
     if data is None or not data.get("data"):
-        bad("litellm is not answering /v1/models")
+        bad(f"litellm is not answering /v1/models")
         return up
-    for model in sorted(m["id"] for m in data["data"]):
-        ok(f"{model}  ->  a server in endpoints/config.yml")
+    served = {m["id"] for m in data["data"]}
+    for role in ROLES:
+        (ok if role in served else bad)(f"{role:<17} -> alias")
+    # Print the model behind each alias: an alias can be served by a model that
+    # cannot emit a tool call.
+    print(f"  routing comes from {CONFIG_YML.relative_to(ROOT)}, generated from .env")
     return up
 
+def config_rows():
+    from config import ROLES as _roles, endpoint_of
+    rows = []
+    for letter in ("A", "B"):
+        served = [r for r in _roles if endpoint_of(r, ENV) == letter]
+        rows.append((f"endpoint {letter}",
+                     ENV[f"ENDPOINT_{letter}_URL"],
+                     ENV[f"ENDPOINT_{letter}_MODEL"],
+                     served))
+    return rows
 
 def resolve_profile(role):
-    """Find the agent profile whose llm_profile_ref matches the role.
-
-    The role name is the join key across three layers: the prompt file, the
-    LiteLLM alias, and the agent profile. Each role has its own profile, so
-    binding a role to a different endpoint is a one-line edit in
-    endpoints/config.yml plus a restart — nothing here changes.
-
-    Returns (profile_id, llm_profile_name) or (None, None).
-    """
     data = agent_api("/api/agent-profiles")
     if not data:
         return None, None
@@ -192,60 +213,33 @@ def resolve_profile(role):
             return p["id"], p.get("llm_profile_ref")
     return None, None
 
-
-# The file each coding worker owns. The prompts reference it as {{MODULE}} so
-# the pipeline supplies the module name instead of the model working out which of
-# the two stubs is its own. Leaving that to the model is how both workers ended
-# up narrating a plan instead of writing code.
-WORKER_MODULE = {
-    "coder-1": "storage.py",
-    "coder-2": "server.py",
-}
-
-
-def render_prompt(text, role, workdir):
-    """Substitute the placeholders a role prompt may use.
-
-    {{WORKDIR}} is the absolute directory the agent is in, so a worker in a
-    worktree gets its own path rather than the main checkout. The earlier
-    version only appended a warning telling the agent to use its worktree; the
-    model still assembled a path from the wrong pieces and got
-    "Invalid `path` parameter" back. Supplying the literal path in the prompt
-    removes the guesswork.
-    """
-    return (text
-            .replace("{{WORKDIR}}", workdir)
-            .replace("{{MODULE}}", WORKER_MODULE.get(role, "")))
-
+def render_prompt(text, role, workdir, **extra):
+    values = {"{{WORKDIR}}": workdir,
+              "{{MODULE}}": WORKER_MODULE.get(role, ""),
+              "{{ROLE}}": role or "",
+              "{{ROOT}}": WORKDIR}
+    values.update({"{{%s}}" % k: str(v) for k, v in extra.items()})
+    for placeholder, value in values.items():
+        text = text.replace(placeholder, value)
+    return text
 
 def scope_prompt(prompt, role, workdir):
-    """Warn a worktree worker that it must stay on its own branch."""
-    if not role or workdir == WORKDIR:
+    # Only a worker inside .worktrees/ is on its own branch. The tester works in
+    # the demo project on main, and telling it otherwise sent it to a branch
+    # that does not exist.
+    if not role or "/.worktrees/" not in workdir:
         return prompt
-    return (
-        f"# WHERE YOU ARE RUNNING\n\n"
-        f"You are worker `{role}`. You are in a git worktree on branch "
-        f"`agent/{role}`. Every path you write or reads must start with "
-        f"`{workdir}/`. Writing to `/opt/project/` directly means writing to the "
-        f"main checkout, and your work would not land on your branch.\n\n"
-        f"Your changes are merged back for you afterwards. Do not run git "
-        f"commands and do not switch branches.\n\n"
-        f"---\n\n{prompt}"
-    )
+    fragment = FRAGMENTS / "worktree-scope.md"
+    if not fragment.exists():
+        warn(f"missing {fragment.relative_to(ROOT)}; the worker is not told "
+             "which branch it is on")
+        return prompt
+    header = render_prompt(fragment.read_text(), role, workdir).rstrip() + "\n\n"
+    return f"{header}{prompt}"
 
-
-def run_role(target, confirm="never", workdir=WORKDIR, started=None, finished=None,
-             max_iterations=100, deadline=None):
-    """Hand one role prompt to an agent and wait for it.
-
-    `target` is a role name from ROLES, or a literal prompt string.
-    `confirm` is one of CONFIRMATION.
-    `started` and `finished` are optional dicts; the conversation's wall-clock
-    start and end are recorded in them so a caller can prove whether two runs
-    actually overlapped.
-
-    Returns the conversation id, or None if the agent never started.
-    """
+def run_role(target, confirm=DEFAULT_CONFIRMATION, workdir=WORKDIR, started=None,
+             finished=None, max_iterations=MAX_ITERATIONS, deadline=None,
+             extra=None):
     if confirm not in CONFIRMATION:
         bad(f"unknown confirmation mode {confirm!r}; "
             f"pick one of {', '.join(CONFIRMATION)}")
@@ -254,15 +248,15 @@ def run_role(target, confirm="never", workdir=WORKDIR, started=None, finished=No
     prompt, label, role = target, "custom prompt", None
     if target in ROLES:
         role = target
-        # A project role defaults into the demo project even when run from the
-        # main checkout, so {{WORKDIR}} means the same thing in both cases.
+        # So {{WORKDIR}} means the same thing from the main checkout or a worktree.
         if workdir == WORKDIR:
             workdir = workdir_for(role)
         path = PROMPTS / f"{ROLES[role]}.md"
         if path.exists():
             prompt = scope_prompt(
-                render_prompt(path.read_text(), role, workdir), role, workdir)
-            label = f"openhands/{path.name}"
+                render_prompt(path.read_text(), role, workdir, **(extra or {})),
+                role, workdir)
+            label = f"prompts/{path.name}"
         else:
             warn(f"{role}: no prompt at {path.relative_to(ROOT)}")
 
@@ -302,6 +296,35 @@ def run_role(target, confirm="never", workdir=WORKDIR, started=None, finished=No
     if started is not None:
         started["cid"] = cid
         started["t0"] = time.time()
+    return wait_for(cid, started, finished, deadline)
+
+def status_of(cid):
+    return str((agent_api(f"/api/conversations/{cid}", timeout=30) or {})
+               .get("execution_status", "?")).lower()
+
+def nudge(cid, text, finished=None, deadline=None):
+    """Send a follow-up turn to a conversation that has ended, and wait again.
+
+    Small models often end a stage by pasting a file's content into a chat
+    reply. OpenHands treats any plain reply as "done", so the stage finishes
+    with nothing written. Re-prompting the same conversation keeps everything
+    it already read and ran in context, so the retry costs one turn rather than
+    a whole rerun.
+    """
+    sent = agent_api(f"/api/conversations/{cid}/events",
+                     {"role": "user", "content": [{"type": "text", "text": text}],
+                      "run": True}, timeout=30)
+    if sent is None:
+        bad(f"could not send a follow-up to {cid}")
+        return None
+    # The post returns before the loop restarts; without this the first poll
+    # still reads the old "finished" and the wait returns at once.
+    t = time.time()
+    while status_of(cid) in DONE and time.time() - t < 30:
+        time.sleep(2)
+    return wait_for(cid, None, finished, deadline)
+
+def wait_for(cid, started=None, finished=None, deadline=None):
     while True:
         state = str((agent_api(f"/api/conversations/{cid}", timeout=30) or {})
                     .get("execution_status", "?")).lower()
@@ -311,10 +334,9 @@ def run_role(target, confirm="never", workdir=WORKDIR, started=None, finished=No
                 finished["t1"] = time.time()
             (ok if state == "finished" else warn)(f"finished: {state}")
             return cid
-        # A wall-clock cap, because an 8b model with thinking enabled on a
-        # memory-starved host can otherwise sit in a loop of read-then-plan
-        # forever. It stops the wait; it does not stop the agent, so the
-        # conversation is stopped explicitly below.
+        # Wall-clock cap: a thinking model on a memory-starved host can loop
+        # read-then-plan forever. Stops the wait, not the agent - hence the
+        # explicit conversation stop below.
         if deadline and time.time() > deadline:
             warn(f"hit the {int(deadline - started['t0']) if started else 0}s "
                  "budget, pausing the conversation")
@@ -325,73 +347,110 @@ def run_role(target, confirm="never", workdir=WORKDIR, started=None, finished=No
             return cid
         time.sleep(5)
 
-
 WORKTREES = ROOT / ".worktrees"
 
-# Roles that work on the demo project rather than the repo root. Their prompts
-# use {{WORKDIR}} for the project directory, so it has to actually be the
-# project. Without this the testing prompt resolved QUALITY.md to
-# /opt/project/QUALITY.md, one level above where the project is.
-PROJECT_ROLES = {"coder-1", "coder-2", "tester"}
-DEMO = "workspace/demo-project"
-
+# Roles that work on the demo project, not the repo root. Without this the
+# testing prompt resolved QUALITY.md one level above the project.
+PROJECT_ROLES = {"coder-1", "coder-2", "tester", "docs"}
 
 def workdir_for(role, base=WORKDIR):
-    """Where a role actually runs: the repo root, or inside the demo project."""
     return f"{base}/{DEMO}" if role in PROJECT_ROLES else base
 
-
 def git(*args, check=True):
-    """Run git in the repo. Returns (returncode, stdout+stderr)."""
     proc = subprocess.run(["git", *args], cwd=ROOT, capture_output=True, text=True)
     out = (proc.stdout + proc.stderr).strip()
     if check and proc.returncode:
         bad(f"git {' '.join(args)} -> {out[:300]}")
     return proc.returncode, out
 
-
 def make_worktree(worker):
-    """Give `worker` its own branch and checkout so two workers cannot collide.
-
-    The directory lives inside the repo, which matters: the repo is bind-mounted
-    at /opt/project, so the agent sees the worktree at the same relative path it
-    was created at and writes land on the host.
-
-    Returns the container-visible working directory, or None on failure.
-    """
     branch = f"agent/{worker}"
     path = WORKTREES / worker
     WORKTREES.mkdir(exist_ok=True)
     if path.exists():
-        # Remove via git first. Calling git on a directory git no longer tracks
-        # prints "is not a working tree", which looked like a failure when it
-        # only meant the previous run had already cleaned up.
+        # Via git first: git on an untracked dir prints "is not a working tree",
+        # which looks like a failure but only means a previous run cleaned up.
         if git("worktree", "remove", "--force", str(path), check=False)[0] == 0:
             ok(f"cleared the previous worktree for {worker}")
         else:
             import shutil
             shutil.rmtree(path, ignore_errors=True)
             git("worktree", "prune", check=False)
-    # -B resets the branch so a rerun starts clean instead of stacking on the
-    # previous run's commits.
-    code, out = git("worktree", "add", "-B", branch, str(path))
+    # -B so a rerun starts clean. --relative-paths is required: an absolute
+    # .git pointer does not resolve inside the container, so `git rev-parse`
+    # failed there and no conversation was created.
+    code, out = git("worktree", "add", "--relative-paths", "-B", branch, str(path))
     if code:
         return None
     ok(f"worktree {path.relative_to(ROOT)} on branch {branch}")
     return workdir_for(worker, f"{WORKDIR}/{WORKTREES.name}/{worker}")
 
+def commit_worktree(worker, message=None):
+    path = WORKTREES / worker
+    if not path.exists():
+        return 0, None
+    git("-C", str(path), "add", "-A")
+    staged = git("-C", str(path), "diff", "--cached", "--name-only", check=False)[1]
+    if not staged:
+        return 0, None
+    files = len(staged.splitlines())
+    msg = message or f"{worker}: agent output"
+    # Unsigned on purpose: these are harness commits on throwaway agent/<role>
+    # branches. Inheriting the user's commit.gpgsign meant a locked SSH signing
+    # agent (1Password) failed every commit, and the stage then integrated the
+    # untouched stubs instead of the agent's work.
+    code, out = git("-c", "commit.gpgsign=false", "-C", str(path),
+                    "commit", "-m", msg)
+    if code:
+        bad(f"{worker}: commit failed -> {out[:200]}")
+        return 0, None
+    ok(f"{worker}: committed {files} file(s) on agent/{worker}")
+    sha = git("-C", str(path), "rev-parse", "--short", "HEAD", check=False)[1]
+    return files, sha
+
+def integrate(worker, paths):
+    """Take `paths` from a worker's branch into the main checkout.
+
+    A full `git merge` is the obvious way to do this and it is what this used to
+    do, but it refuses to run whenever the main checkout has any uncommitted
+    change at all -- and this repo has a lot, none of it related to the agents.
+    It also merges whatever else the branch happens to touch, so one worker can
+    drag in the other worker's files.
+
+    Checking out just the stage's own paths keeps the integration scoped to what
+    the stage promised and works on a dirty tree. The branch and its commit
+    stay put, so the diff is still there to review.
+    """
+    if not paths:
+        return []
+    taken = []
+    for relpath in paths:
+        if git("cat-file", "-e", f"agent/{worker}:{relpath}", check=False)[0] != 0:
+            warn(f"{worker}: {relpath} is not on the branch, skipping")
+            continue
+        code, out = git("checkout", f"agent/{worker}", "--", relpath, check=False)
+        if code:
+            bad(f"{worker}: could not take {relpath} -> {out[:200]}")
+            continue
+        taken.append(relpath)
+    if taken:
+        ok(f"{worker}: took {len(taken)} file(s) from agent/{worker}: "
+           + ", ".join(taken))
+    return taken
+
 
 def drop_worktree(worker, merge=True):
-    """Merge a worker's branch back, then remove the worktree.
-
-    Returns True if the merge was clean. A conflict is reported, not silently
-    resolved: the caller has to look at it.
-    """
     path = WORKTREES / worker
     if not path.exists():
         return False
+    commit_worktree(worker)
     if merge:
-        changed = git("diff", "--name-only", "HEAD", f"agent/{worker}")[1]
+        # Diff against the merge base, not HEAD: once an earlier worker has
+        # merged, "diff HEAD agent/<w>" also lists files this worker never
+        # touched, which over-reports what it changed.
+        base = git("merge-base", "HEAD", f"agent/{worker}", check=False)[1].split()
+        changed = git("diff", "--name-only", base[0] if base else "HEAD",
+                      f"agent/{worker}")[1]
         if not changed:
             warn(f"{worker}: branch has no changes, nothing to merge")
             return True
@@ -405,14 +464,8 @@ def drop_worktree(worker, merge=True):
     git("worktree", "remove", "--force", str(path))
     return True
 
-
-def run_workers(workers, confirm="never", max_iterations=100, budget=None):
-    """Run every worker concurrently, each in its own worktree.
-
-    This is the N >= 2 fan-out for functional requirement 3. It is only real if
-    the conversations overlap in time, so the result reports each worker's start
-    and end and the overlap window rather than asserting that it was parallel.
-    """
+def run_workers(workers, confirm=DEFAULT_CONFIRMATION,
+                max_iterations=MAX_ITERATIONS, budget=None, reset=()):
     for w in workers:
         if w not in ROLES:
             bad(f"unknown worker {w!r}; pick from {', '.join(sorted(ROLES))}")
@@ -424,11 +477,24 @@ def run_workers(workers, confirm="never", max_iterations=100, budget=None):
             return {}
         workdirs[w] = wd
 
+    # file_editor's create command refuses to overwrite, so a leftover stub makes
+    # the worker's write fail. Removing the worker's own target inside its own
+    # worktree means the write always lands and every rerun starts identically.
+    # Only the worker's own module goes: deleting the other worker's file would
+    # put a spurious deletion in this branch and collide on merge.
+    for w in workers:
+        targets = reset.get(w, []) if isinstance(reset, dict) else list(reset)
+        for relpath in targets:
+            stale = WORKTREES / w / relpath
+            if stale.exists():
+                stale.unlink()
+                ok(f"{w}: removed stale {relpath} so create can write it")
+
     marks = {w: {"started": {}, "finished": {}} for w in workers}
     print(f"\n-- {len(workers)} workers in parallel --")
     t_start = time.time()
-    # The budget is per worker, not shared: they start together, so a shared
-    # deadline would cut the first one short for no reason.
+    # Per worker, not shared: they start together, so a shared deadline would
+    # cut the first one short for no reason.
     with concurrent.futures.ThreadPoolExecutor(max_workers=len(workers)) as pool:
         futures = {
             w: pool.submit(run_role, w, confirm, workdirs[w],
@@ -447,14 +513,7 @@ def run_workers(workers, confirm="never", max_iterations=100, budget=None):
             bad(f"{w}: no conversation")
     return {"workdirs": workdirs, "conversations": results, "marks": marks}
 
-
 def report_parallelism(workers, marks):
-    """Print measured overlap, not an assumption of it.
-
-    Concurrent execution means the intervals [t0, t1] intersect. If they merely
-    run one after another, the total span equals the sum of the runs and this
-    says so.
-    """
     spans = []
     for w in workers:
         m = marks[w]
@@ -475,17 +534,21 @@ def report_parallelism(workers, marks):
     else:
         warn(f"serialised: no overlap, whole fan-out took {total:.1f}s")
 
-
 def main():
     args = sys.argv[1:]
+    if any(a in ("-h", "--help", "help") for a in args):
+        print((__doc__ or "").strip())
+        return 0
+
     check_only = "--check" in args
     want_run = "--run" in args or not check_only
 
-    confirm, rest = "never", []
+    confirm, rest = DEFAULT_CONFIRMATION, []
     workers = None
     do_merge = False
-    max_iterations = 100
-    budget = None
+    max_iterations = MAX_ITERATIONS
+    # STAGE_BUDGET=0 in .env means no cap; the flag still wins.
+    budget = STAGE_BUDGET or None
     i = 0
     while i < len(args):
         a = args[i]
@@ -555,12 +618,13 @@ def main():
         if not result.get("conversations"):
             return 1
         failed = [w for w, cid in result["conversations"].items() if not cid]
+        if do_merge:
+            failed += [w for w in workers if not drop_worktree(w)]
         return 1 if failed else 0
     run_role(rest[0] if rest else "architect", confirm=confirm,
              max_iterations=max_iterations,
              deadline=time.time() + budget if budget else None)
     return 0
-
 
 if __name__ == "__main__":
     sys.exit(main())

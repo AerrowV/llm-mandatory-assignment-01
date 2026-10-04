@@ -1,0 +1,74 @@
+{
+  "meta": {
+    "started": "20261004T190348Z",
+    "finished": "20261004T190608Z",
+    "wall_clock_s": 140.1,
+    "confirmation": "never",
+    "stages_requested": [
+      "deploy-validator"
+    ],
+    "budget_s": 1200,
+    "roles": [
+      "architect",
+      "coder-1",
+      "coder-2",
+      "deploy-validator",
+      "docs",
+      "techlead",
+      "tester"
+    ],
+    "routing": {
+      "endpoint A": {
+        "url": "http://127.0.0.1:11434",
+        "model": "qwen2.5:3b",
+        "roles": [
+          "architect",
+          "techlead",
+          "docs"
+        ]
+      },
+      "endpoint B": {
+        "url": "http://127.0.0.1:11435",
+        "model": "llama3.1:8b",
+        "roles": [
+          "coder-1",
+          "coder-2",
+          "tester",
+          "deploy-validator"
+        ]
+      }
+    }
+  },
+  "stages": [
+    {
+      "role": "deploy-validator",
+      "title": "Deployment validation",
+      "fr": "FR6",
+      "workdir": "/opt/project",
+      "alias": "deploy-validator",
+      "routed_to": [
+        "B",
+        "llama3.1:8b",
+        "127.0.0.1:11435"
+      ],
+      "confirmation": "never",
+      "conversations": {
+        "deploy-validator": "fb9cf0c2-f280-41c9-87d6-a00f318729c0"
+      },
+      "expect": [
+        "docs/deployment-validation.md"
+      ],
+      "passed": true,
+      "evidence": [],
+      "precommand": {
+        "command": "./docker/validate.sh",
+        "exit": 1
+      },
+      "nudges": [],
+      "duration_s": 135.6,
+      "artifacts": [
+        "docs/deployment-validation.md"
+      ]
+    }
+  ]
+}

@@ -41,7 +41,8 @@ Rules:
 
 ## Module 2 — `src/todoapp/server.py` (worker 2)
 
-HTTP on top of the store. Import `TodoStore` from `storage`; do not reimplement
+HTTP on top of the store. Import it with `from todoapp.storage import TodoStore`
+(never `from storage import ...`, which fails at runtime); do not reimplement
 storage here.
 
 ```python
