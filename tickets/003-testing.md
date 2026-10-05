@@ -1,13 +1,13 @@
 ## Scope
 
-This ticket covers the testing of both the storage and server modules. It does not cover the implementation of either module.
+- Write tests for the `src/todoapp/storage.py` and `src/todoapp/server.py` modules
 
 ## Acceptance Criteria
 
-1. The tests should cover the functionality of the storage module.
-2. The tests should cover the functionality of the server module.
+- The tests should cover all the functionality of the storage and server modules
+- The tests should ensure the modules work together as expected
 
 ## Dependencies
 
-- 001-storage
-- 002-server
+- 001-storage.md
+- 002-server.md

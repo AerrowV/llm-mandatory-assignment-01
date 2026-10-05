@@ -1,12 +1,12 @@
 ## Scope
 
-This ticket covers the implementation of the server module in `src/todoapp/server.py`. It does not cover the storage module or any testing.
+- Implement the `src/todoapp/server.py` module
 
 ## Acceptance Criteria
 
-1. The server module should be able to handle HTTP requests and responses.
-2. The server module should be able to interact with the storage module.
+- The server module should be able to handle HTTP requests for todo items
+- The server module should support basic CRUD operations for todo items
 
 ## Dependencies
 
-- None
+- 001-storage.md

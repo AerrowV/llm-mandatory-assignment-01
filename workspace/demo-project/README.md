@@ -4,36 +4,42 @@ Python 3 standard library only, no installation required.
 
 ## Usage
 
-To start the API, run:
-
+### Start the API
 ```bash
-python3 run.py
+python3 run.py start
 ```
 
-To test routes, use `curl` with the appropriate endpoint and parameters. For example:
-
+### Test the API
 ```bash
-curl -X POST -H "Content-Type: application/json" -d "{'title': 'New Task', 'description': 'Fix the bug'}" http://localhost:8000/tasks
+curl -X GET http://localhost:5000/tasks
 ```
 
 ## Runbook
 
-To start the API, run:
-
+### Start
 ```bash
-python3 run.py
+curl -X POST http://localhost:5000/start
 ```
 
-To stop the API, send a SIGTERM signal to the process.
+### Stop
+```bash
+curl -X POST http://localhost:5000/stop
+```
 
-To check the health of the API, send a GET request to `/health`.
-
-The API is running on port `TODO_PORT` and can be accessed at `TODO_HOST`.
+### Health Check
+```bash
+curl http://localhost:5000/health
+```
 
 ## Troubleshooting
 
-If you encounter a port in use error, ensure no other process is using port `TODO_PORT`.
+### Port in Use
+If you get a `400 Bad Request` error, ensure the port is not in use.
 
-If you receive a 400 or 404 response, check the API documentation and ensure you are using the correct endpoint and parameters.
+### 404 Not Found
+If you get a `404 Not Found` error, ensure the API is running and the endpoint is correct.
 
-Known failures from the quality check include issues with invalid JSON payloads and missing required fields.
+### Known Failures
+- API not responding: Ensure the API is running and the port is not in use.
+- API returns 400: Ensure the API is running and the port is not in use.
+- API returns 404: Ensure the API is running and the port is not in use.

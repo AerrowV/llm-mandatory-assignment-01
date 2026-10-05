@@ -15,30 +15,25 @@ class TodoServer:
             todos = self.store.list_all()
             return 200, {"todos": [todo for todo in todos]}
         elif method == "POST" and path == "/todos":
-            if body is not None:
-                try:
-                    todo = json.loads(body.decode())
-                    if todo["title"] == "":
-                        return 400, {"error": "Title is required"}
-                    elif not isinstance(todo["title"], str):
-                        return 400, {"error": "Title must be a string"}
-                    else:
-                        new_todo = self.store.add(todo["title"])
-                        return 201, new_todo
-                except json.JSONDecodeError:
-                    return 400, {"error": "Invalid JSON request body"}
-            else:
-                return 400, {"error": "Missing request body"}
+            try:
+                todo = json.loads(body.decode())
+                if not todo or not isinstance(todo, dict) or "title" not in todo or not isinstance(todo["title"], str):
+                    return 400, {"error": "Invalid request body"}
+                if not todo["title"]:
+                    return 400, {"error": "Empty title"}
+                todo_id = self.store.add(todo["title"])
+                return 201, {"todo": {"id": todo_id, "title": todo["title"], "done": False}}
+            except json.JSONDecodeError:
+                return 400, {"error": "Malformed JSON request body"}
         elif method == "GET" and path.startswith("/todos/"):
             try:
                 todo_id = int(path.split("/")[-1])
                 todo = self.store.get(todo_id)
-                if todo is not None:
-                    return 200, todo
-                else:
+                if todo is None:
                     return 404, {"error": "Unknown todo id"}
+                return 200, {"todo": todo}
             except ValueError:
-                return 404, {"error": "Invalid todo id"}
+                return 404, {"error": "Unknown todo id"}
         elif method == "DELETE" and path.startswith("/todos/"):
             try:
                 todo_id = int(path.split("/")[-1])
@@ -50,4 +45,8 @@ class TodoServer:
             return 405, {"error": "Method not allowed"}
 
     def start(self) -> None:
-        pass
+        import socket
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.bind((self.host, self.port))
+        sock.listen(5)
+        print("Server started on port", self.port)

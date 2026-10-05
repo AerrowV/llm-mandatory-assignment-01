@@ -1,0 +1,74 @@
+{
+  "started": "20261004T200137Z",
+  "routing": {
+    "A": {
+      "model": "qwen2.5:3b",
+      "roles": "architect,techlead,docs"
+    },
+    "B": {
+      "model": "llama3.1:8b",
+      "roles": "coder-1,coder-2,tester,deploy-validator"
+    }
+  },
+  "stages": [
+    {
+      "role": "architect",
+      "fr": "FR1",
+      "passed": true,
+      "seconds": 96,
+      "files": [
+        "docs/components.md",
+        "docs/api.md",
+        "docs/deployment.md",
+        "docs/decisions.md",
+        "docs/handoff.md"
+      ]
+    },
+    {
+      "role": "techlead",
+      "fr": "FR2",
+      "passed": true,
+      "seconds": 57,
+      "files": [
+        "tickets/list.md"
+      ]
+    },
+    {
+      "role": "coders",
+      "fr": "FR3",
+      "passed": true,
+      "seconds": 223,
+      "files": [
+        "workspace/demo-project/src/todoapp/storage.py",
+        "workspace/demo-project/src/todoapp/server.py"
+      ]
+    },
+    {
+      "role": "tester",
+      "fr": "FR4",
+      "passed": true,
+      "seconds": 223,
+      "files": [
+        "workspace/demo-project/QUALITY.md"
+      ]
+    },
+    {
+      "role": "docs",
+      "fr": "FR5",
+      "passed": true,
+      "seconds": 68,
+      "files": [
+        "workspace/demo-project/README.md"
+      ]
+    },
+    {
+      "role": "deploy-validator",
+      "fr": "FR6",
+      "passed": true,
+      "seconds": 87,
+      "files": [
+        "docs/deployment-validation.md"
+      ]
+    }
+  ]
+}

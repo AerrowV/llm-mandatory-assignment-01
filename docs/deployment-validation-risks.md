@@ -1,0 +1,2 @@
+## Risks
+The project is not ready for local deployment due to the failed checks. The main issues are the unit tests failing and the server not starting and answering /health. The LITELLM_URL variable is also not set, which is causing the proxy to fail. These issues need to be addressed first.

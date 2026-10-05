@@ -1,0 +1,27 @@
+{
+  "started": "20261004T201516Z",
+  "routing": {
+    "A": {
+      "model": "qwen2.5:3b",
+      "roles": "architect,techlead,docs"
+    },
+    "B": {
+      "model": "llama3.1:8b",
+      "roles": "coder-1,coder-2,tester,deploy-validator"
+    }
+  },
+  "stages": [
+    {
+      "role": "architect",
+      "fr": "FR1",
+      "passed": false,
+      "seconds": 261,
+      "files": [
+        "docs/components.md",
+        "docs/deployment.md",
+        "docs/decisions.md",
+        "docs/handoff.md"
+      ]
+    }
+  ]
+}

@@ -1,10 +1,9 @@
 ## Ordering Index
 
-### Storage Module
+This file lists the tickets in the order they should be done.
+
+### Tickets
+
 - 001-storage.md
-
-### Server Module
 - 002-server.md
-
-### Testing
 - 003-testing.md

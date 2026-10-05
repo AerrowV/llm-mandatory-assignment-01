@@ -1,11 +1,11 @@
 ## Scope
 
-This ticket covers the implementation of the storage module in `src/todoapp/storage.py`. It does not cover the server module or any testing.
+- Implement the `src/todoapp/storage.py` module
 
 ## Acceptance Criteria
 
-1. The storage module should be able to store and retrieve todo items.
-2. The storage module should handle errors gracefully.
+- The storage module should be able to store and retrieve todo items
+- The storage module should support basic CRUD operations (Create, Read, Update, Delete)
 
 ## Dependencies
 
