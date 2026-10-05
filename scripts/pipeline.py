@@ -89,9 +89,10 @@ def git(*args):
 def preflight(env, routing_changed=False):
     for letter in ("A", "B"):
         url = f"http://127.0.0.1:{env[f'ENDPOINT_{letter}_PORT']}/api/tags"
-        say(reachable(url), f"endpoint {letter} {env[f'ENDPOINT_{letter}_MODEL']} "
+        up = reachable(url)
+        say(up, f"endpoint {letter} {env[f'ENDPOINT_{letter}_MODEL']} "
             f"-> {env[f'ENDPOINT_{letter}_ROLES']}")
-        if not reachable(url):
+        if not up:
             return False
     subprocess.run(["docker", "compose", "up", "-d"], cwd=ROOT, capture_output=True)
     if routing_changed:
@@ -279,8 +280,7 @@ def verify(stage):
         say(good, f"{p}: {f.stat().st_size if f.exists() else 0} bytes")
         passed &= good
     if stage.get("words") and not missing_files(stage):
-        text = (ROOT / stage["files"][0]).read_text().lower()
-        absent = [w for w in stage["words"] if w not in text]
+        absent = missing_words(stage)
         say(not absent, "covers " + ", ".join(stage["words"])
             + (f" (missing: {', '.join(absent)})" if absent else ""))
         passed &= not absent
@@ -393,6 +393,9 @@ def compare(a, b):
 def main():
     global FIX
     args = sys.argv[1:]
+    if args[:1] in (["-h"], ["--help"]):
+        print(__doc__)
+        return 0
     if args[:1] == ["--compare"]:
         return compare(args[1], args[2])
     routing = ROOT / "endpoints" / "config.yml"
