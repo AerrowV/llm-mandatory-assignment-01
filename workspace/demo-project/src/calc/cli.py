@@ -1,27 +1,27 @@
-
-
 def main(argv: list[str]) -> int:
-    if len(argv) != 4:
+    if len(argv) != 3:
         print(f"error: wrong number of arguments: {len(argv)}")
         return 2
-    op, a, b = argv
     try:
-        a = float(a)
-        b = float(b)
+        op = argv[0]
+        num1 = float(argv[1])
+        num2 = float(argv[2])
+        if op == "add":
+            result = num1 + num2
+        elif op == "subtract":
+            result = num1 - num2
+        elif op == "multiply":
+            result = num1 * num2
+        elif op == "divide":
+            if num2 == 0:
+                print("error: cannot divide by zero")
+                return 1
+            result = num1 / num2
+        else:
+            print(f"error: unknown operation: {op}")
+            return 2
+        print(result)
+        return 0
     except ValueError:
-        print(f"error: {a} or {b} is not a number")
-        return 2
-    if op == "add":
-        return int(a + b)
-    elif op == "subtract":
-        return int(a - b)
-    elif op == "multiply":
-        return int(a * b)
-    elif op == "divide":
-        if b == 0:
-            print("error: cannot divide by zero")
-            return 1
-        return int(a / b)
-    else:
-        print(f"error: unknown operation: {op}")
+        print(f"error: {argv[1]} or {argv[2]} is not a number")
         return 2

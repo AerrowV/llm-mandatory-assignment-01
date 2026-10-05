@@ -1,31 +1,59 @@
-
 ## Setup
 
-Python 3 standard library only, nothing to install.
+Python 3 standard library only, no additional installation required.
 
 ## Usage
 
-### Operations
+Each of the four operations can be run using the following command:
 
-- Addition: `python3 run.py add 2 3`
-- Subtraction: `python3 run.py subtract 5 2`
-- Multiplication: `python3 run.py multiply 4 2`
-- Division: `python3 run.py divide 10 2`
+```bash
+python3 run.py <operation>
+```
 
-### Test Command
+Where `<operation>` can be one of the following:
 
-To run tests, use: `python3 run.py test`.
+- `add`: Add two numbers
+- `subtract`: Subtract the second number from the first
+- `multiply`: Multiply the two numbers
+- `divide`: Divide the first number by the second
+
+Here are examples of each operation:
+
+```bash
+# Add two numbers
+python3 run.py add 5 3
+
+# Subtract the second number from the first
+python3 run.py subtract 5 3
+
+# Multiply the two numbers
+python3 run.py multiply 5 3
+
+# Divide the first number by the second
+python3 run.py divide 5 3
+```
 
 ## Runbook
 
-- To run the calculator, use: `python3 run.py`.
-- Exit codes:
-  - 0: Success
-  - 1: An operation failed
-  - 2: An operation was invalid (e.g., division by zero)
+To run the calculator, simply execute the following command:
+
+```bash
+python3 run.py
+```
+
+The calculator will exit with the following exit codes:
+
+- `0`: The operation was successful
+- `1`: An error occurred during the operation
+- `2`: An error occurred during the operation and the operation was not performed
 
 ## Troubleshooting
 
-- Error message: `python3 run.py add 2 3` will return an error if the arguments are not integers.
-- Wrong exit code: If the calculator returns an exit code other than 0, 1, or 2, it indicates an issue with the operation or the calculator itself.
-- Known failures: Refer to the `QUALITY.md` file for known issues and how to resolve them.
+If you encounter an error, please check the output for any error messages. If you receive an unexpected exit code, please refer to the runbook for the meanings of the exit codes.
+
+Known failures from the tests are as follows:
+
+- The calculator does not handle division by zero.
+- The calculator does not handle non-numeric inputs.
+
+If you have any questions or need further assistance, please contact the support team.
