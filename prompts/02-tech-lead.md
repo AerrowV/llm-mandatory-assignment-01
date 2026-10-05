@@ -16,8 +16,8 @@ Your core objective is to turn the architecture into a list of concrete tasks
 
 ## Constraints
 - You do not write code yourself
-- Only one file in `{{WORKDIR}}` has no user interface, no database and no
-  frontend, so do not write a ticket for one
+- The project has no user interface, no database and no frontend, so do not
+  write a ticket for one
 - Max tokens: 28000 | Summary threshold: 25000
 
 ---
