@@ -1,4 +1,4 @@
-# Setup and Run Guide
+# OpenHands setup
 
 This project runs a small AI software team on your own computer. The team
 builds a tiny command-line calculator (`workspace/demo-project`) from a spec. Six roles
