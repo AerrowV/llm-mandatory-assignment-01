@@ -3,13 +3,13 @@
 **Deliverable 1 of 2.** Companion: `SETUP.md` (reproduction guide).
 Requirement source: `Assignment LLm for developers.pdf`.
 
-**Status, stated up front.** The toolchain, the six-role workflow and the
-evaluation are built and the infrastructure is verified. Two of the six
-functional responsibilities are **not** yet satisfied by a produced artifact:
-implementation (FR3) and, as a consequence, the passing test run (FR4). The
-cause is a single unresolved upstream model failure, documented in §7.1 and §8.
-This document reports what is proven and what is not, rather than marking
-mechanisms as delivered.
+**Status, stated up front.** The toolchain and the six-role workflow are built
+and run end to end: every stage delivers its files in one unattended run
+(`artifacts/runs/20261005T085117Z`). The demo is a small command-line
+calculator; in the latest run the two coders' code passes 10 of its 11 tests
+(`artifacts/runs/20261005T091026Z`). What the small local models do *not* yet
+do reliably is improve their code in a fix round (§8). This document reports
+what is proven and what is not, rather than marking mechanisms as delivered.
 
 ---
 
@@ -45,8 +45,8 @@ processes on two ports (§2), not two models behind one server. Switching and
 routing are configuration-only: roles reference proxy aliases, and the
 alias→endpoint mapping lives in one generated file. Adding a third endpoint is a
 `model_list` entry plus a proxy restart, with no change to any agent profile or
-prompt. Different roles are bound to different endpoints today — four on A, four
-on B — and that binding was verified by observing which model each server
+prompt. Different roles are bound to different endpoints today — five on A, the two
+coders on B — and that binding was verified by observing which model each server
 actually loaded (§4.3).
 
 **Open source.** Met. OpenHands, LiteLLM and Ollama are all open source. No
@@ -73,8 +73,13 @@ measured unless it is.
 | | Endpoint A | Endpoint B |
 |---|---|---|
 | Process | `ollama serve` on `127.0.0.1:11434` | second `ollama serve` on `127.0.0.1:11435`, separate `OLLAMA_MODELS` |
-| Model | `qwen2.5:3b` | `qwen2.5:7b-instruct` |
-| Roles | architect, techlead, docs | coder-1, coder-2, tester, deploy-validator |
+| Model | `qwen2.5:3b` | `llama3.1:8b` |
+| Roles | architect, techlead, tester, docs, deploy-validator | coder-1, coder-2 |
+
+Endpoint B serves only the coders, so the two run in parallel on it
+(`OLLAMA_NUM_PARALLEL=2`) without queueing behind another role. Their sampling
+temperature is `CODER_TEMPERATURE` in `.env`, 0 by default: at 0.3
+`llama3.1:8b` starts describing tool calls in text instead of making them.
 
 Two separate server *processes* on two ports, not two models behind one server,
 so the hard requirement for two distinct endpoints is met in the strong sense.
@@ -98,9 +103,9 @@ endpoints/config.yml  profiles/*.json   agent-profiles/*.json
 (alias → endpoint)    (alias + key)      (role → llm_profile_ref)
       │
       ▼
-   LiteLLM :4000  ──►  endpoint A :11434   (planning roles)
+   LiteLLM :4000  ──►  endpoint A :11434   (architect, techlead, tester, docs, deploy)
       │
-      └──────────►  endpoint B :11435      (execution roles)
+      └──────────►  endpoint B :11435      (coder-1, coder-2)
 
    prompts/0N-<role>.md ──► rendered with {{WORKDIR}} ──► OpenHands :8000
                                                             │
@@ -108,7 +113,7 @@ endpoints/config.yml  profiles/*.json   agent-profiles/*.json
                                               git worktree per worker
                                                             │
                                                             ▼
-                                            artifacts/  +  artifacts/runs/<id>/
+                                                  artifacts/runs/<id>/
 ```
 
 Three properties are worth stating because they are what make the rest work.
@@ -121,16 +126,27 @@ role prompt  →  agent profile (llm_profile_ref)  →  LLM profile ("openai/<al
              →  LiteLLM alias  →  endpoint A or B
 ```
 
-**Handoff is by file, not by conversation memory.** The repository is bind-mounted
+**Handoff is by file, plus a short team chat.** The repository is bind-mounted
 read-write into the agent container. The architect writes `docs/`; the tech lead
-reads `docs/` and writes `tickets/`; the implementers read `tickets/`. No role
-depends on another role's context window, so no role can silently lose it.
+reads `docs/` and writes `tickets/`; the coders read `TASK.md`. No role depends
+on another role's context window. Each role's final reply (cut to 300
+characters) is also posted to a team chat, and the last four messages are
+appended to every later prompt, so a role sees what its teammates reported.
 
-**Generated config is committed and drift-checked.** `scripts/config.py --check`
-fails if the generated files no longer match `.env`, and `docker/validate.sh`
-fails the build on drift. This is a deliberate trade: committing generated files
-costs a merge-conflict surface, and buys a fresh clone that works before any
-script has run.
+**The harness runs the tests, the agents report on them.** After the tester
+stage the pipeline runs the unit tests on the host. If any fail, each coder
+gets only the failures in its own module (a fix round, at most two), its
+previous attempt as `<module>.prev`, and the spec. A rewritten module is kept
+only if it raises the number of passing tests; otherwise the previous code is
+restored and the team chat says so. The tester and deploy-validator receive the
+real test and `docker/validate.sh` output in their prompt instead of running
+the commands themselves.
+
+**Generated config is committed and regenerated on every run.**
+`scripts/config.py` rewrites `endpoints/config.yml` and the 14 profiles from
+`.env` at the start of every pipeline run, and restarts LiteLLM when the routing
+changed. Committing them costs a merge-conflict surface and buys a fresh clone
+that works before any script has run.
 
 ---
 
@@ -141,16 +157,16 @@ script has run.
 | | OpenHands + LiteLLM | CrewAI |
 |---|---|---|
 | Services to run | 4: 2 × Ollama, LiteLLM, OpenHands | 2 × Ollama + the CrewAI process |
-| Config files to author | 1 (`.env`); 16 files generated | one LLM block per agent |
+| Config files to author | 1 (`.env`); 15 files generated | one LLM block per agent |
 | Credentials to reconcile | proxy key in 3 places (`.env`, compose `env_file`, 7 LLM profiles) | one key per agent |
 | Time to first agent turn | ~1 h on a machine with the images cached; first image pull is ~5 GB | shorter — fewer moving parts |
-| Failure surface at startup | image digests, proxy config schema, profile binding, Docker socket for the sandbox | dependency install, model config validity |
+| Failure surface at startup | image digests, proxy config schema, profile binding, repository mount for the agent's shell | dependency install, model config validity |
 
 OpenHands is unambiguously the heavier of the two to stand up: it is four
-services, it needs the Docker socket mounted so the agent has a shell at all
-(without it the agent cannot execute a command, which makes FR3 and FR4
-impossible rather than degraded), and its LLM configuration is spread across
-profiles and environment variables.
+services, the repository must be mounted into the agent container so the agent
+has a shell on the project (without it the agent cannot write or run anything,
+which makes FR3 and FR4 impossible rather than degraded), and its LLM
+configuration is spread across profiles and environment variables.
 
 That weight buys the property that actually matters for this assignment, which
 CrewAI does not offer: a **routing seam** between roles and endpoints.
@@ -189,6 +205,9 @@ asking Ollama which model it loaded:
 |---|---|---|
 | `docs` (A role) | `qwen2.5:3b` | none |
 | `tester` (B role) | `qwen2.5:3b` | `qwen2.5:7b-instruct` |
+
+(Measured with the earlier routing, when the tester ran on B with
+`qwen2.5:7b-instruct`; the method is the same for the current routing.)
 
 The loaded-model check is the evidence, not the alias in the conversation
 metadata — the metadata records the alias the agent *asked* for, which is not
@@ -238,67 +257,63 @@ comparison has come full circle.
 
 ## 5. Meeting the functional requirements
 
+Evidence for every row: `artifacts/runs/20261005T085117Z` (all six stages in one
+run) and `artifacts/runs/20261005T091026Z` (coders onward, after the spec was
+made clearer). `python3 scripts/demo.py --show` prints both the record and the
+produced files.
+
 ### 5.1 Architecture — MET
-`prompts/01-architect.md` produces four artifacts: component decomposition
-(`docs/components.md`, 19 lines), interface contracts (`docs/api.md`, 17),
-deployment topology and constraints (`docs/deployment.md`, 29), and decision
-records (`docs/decisions.md`, 23). All four were produced by the agent in a real
-run and are non-empty.
+`prompts/01-architect.md` produces five files: component decomposition
+(`docs/components.md`), interface contracts (`docs/api.md`), deployment topology
+(`docs/deployment.md`), decision records (`docs/decisions.md`) and the handoff
+to the tech lead (`docs/handoff.md`). The pipeline checks that each exists and
+is non-trivial. They are short — `qwen2.5:3b` writes thin documents — but they
+are about this repository, not a generic system.
 
 ### 5.2 Tech lead — MET
-`prompts/02-tech-lead.md` produced four tickets plus an index in `tickets/`, each
-carrying scope, a definition of done, and dependency ordering
-(`001-storage` → `002-server` → `003-testing`).
+`prompts/02-tech-lead.md` produces the index `tickets/list.md` and three tickets,
+`001-ops` → `002-cli` → `003-testing`, each with scope, acceptance criteria and
+dependencies.
 
-### 5.3 Implementation, N ≥ 2 — MECHANISM ONLY
-The design is two workers (`coder-1`, `coder-2`) with the same prompt and model,
-differentiated only by name so each can be given its own git worktree:
+### 5.3 Implementation, N ≥ 2 — MET
+Two workers (`coder-1`, `coder-2`) share one prompt and model and run in
+parallel, each in its own git worktree on its own branch:
 
 ```
-agent/coder-1 → .worktrees/coder-1/    merged only after both finish
-agent/coder-2 → .worktrees/coder-2/
+agent/coder-1 → .worktrees/coder-1/   writes src/calc/ops.py
+agent/coder-2 → .worktrees/coder-2/   writes src/calc/cli.py
 ```
 
-Merging is deferred until both conversations finish, so a half-finished worker
-cannot half-merge into the branch the tester reads. Each worker owns exactly one
-file, named in the prompt as `{{MODULE}}` — leaving the model to infer which of
-two stubs was its own was measured to make both workers narrate a plan instead of
-writing code.
+Each worker owns exactly one module, named in the prompt as `{{MODULE}}` —
+leaving the model to infer which of two stubs was its own was measured to make
+both workers narrate a plan instead of writing code. After both finish, the
+harness commits each branch and takes only that worker's module into the main
+checkout, so one worker cannot overwrite the other's file. A module that still
+contains `NotImplementedError` fails the stage.
 
-**Not delivered.** The two workers have never landed a real implementation;
-`src/todoapp/storage.py` and `server.py` remain stubs and 39 tests error. §8
-gives the cause. The pipeline's own verifier is what reports this honestly: it
-greps each expected source file for `NotImplementedError` and fails the stage,
-which is why this section does not claim FR3.
+### 5.4 Testing and quality — MET, with one failing test
+The spec ships 11 unit tests (`workspace/demo-project/tests/`). The harness runs
+them and `python3 -m compileall` on the host; the tester reads the real output
+and the code and writes `workspace/demo-project/QUALITY.md` with test results,
+static checks and known limitations. In the latest run 10 of 11 pass; the
+failure is real (`run.py add 2 3` prints `5.0`, the spec says `5`) and is
+reported as such. Failing tests trigger the fix rounds described in §3.
 
-### 5.4 Testing and quality — PARTIAL
-`prompts/04-testing.md` produced two real test modules (259 lines, 39 test cases)
-covering storage and the HTTP route. The role is required to run them and report
-output verbatim, and to write `QUALITY.md` with results, static checks, and known
-limitations.
+### 5.5 Documentation — MET
+`prompts/05-documentation.md` makes the docs role write
+`workspace/demo-project/README.md` with setup, usage, runbook (exit codes) and
+troubleshooting sections, based on `TASK.md`, `run.py` and `QUALITY.md`; the
+pipeline checks all four sections are present. Design documentation is the
+architect's `docs/`. The repository's own setup guide (`SETUP.md`) is hand-written.
 
-**Not delivered:** the test run does not pass, because the code under test is a
-stub. The test *authoring* is done; the quality *report* cannot honestly be
-produced until FR3 lands.
-
-### 5.5 Documentation — PARTIAL
-The documentation role's prompt is `prompts/05-documentation.md`, covering the
-four required outputs (README, API usage, runbook, design docs). `docs/api.md`,
-`docs/deployment.md` and `docs/decisions.md` exist from the architecture stage.
-`README.md` is still the original project plan rather than the setup/run
-document, so this requirement is not yet met; `SETUP.md` currently carries that
-content.
-
-### 5.6 Deployment validation — PARTIAL
-`docker/validate.sh` is a 13-check deployment validator: compose parses, config
-is valid YAML with a model list, proxy key present, no port published off
-loopback, the demo project compiles, unit tests pass, the server answers
-`/health`, containers are up, the proxy is healthy, the UI serves, and all seven
-aliases resolve. `python3 scripts/pipeline.py --check` is the preflight.
-
-Currently 8 checks pass and 5 fail — 3 because the stack is not running and 2
-because of FR3/FR4. The validator was written by hand rather than produced by the
-deploy role, so the *responsibility* is not yet exercised by an agent.
+### 5.6 Deployment validation — MET
+`docker/validate.sh` is a 9-check deployment validator: compose parses, the
+proxy key is set, the generated config lists all 7 roles, every published port
+is bound to 127.0.0.1, the demo modules compile, its unit tests pass, the CLI
+runs, the proxy is healthy and OpenHands answers. The harness runs it, and the
+deploy-validator writes `docs/deployment-validation.md` (method, checklist,
+verdict, risks) from the real output. The script is hand-written; the agent's
+part is reading and reporting it, not inventing results.
 
 ---
 
@@ -338,8 +353,9 @@ have had it. `scripts/pipeline.py --compare RUN_A RUN_B` diffs two run records.
 Container images are pinned by digest, with `linux/amd64` digests recorded as
 comments, because `:latest` had already drifted from the measured build.
 
-Not yet demonstrated: two complete six-stage runs on identical configuration.
-That requires FR3.
+Not yet demonstrated: two complete six-stage runs on identical configuration
+compared with `--compare`. The kept records are one full run and one run from
+the coders onward; older debug runs were removed and remain in git history.
 
 ### 6.3 Context management — MET by construction, with a stated ceiling
 Three mechanisms, in order of how much they carry:
@@ -350,19 +366,17 @@ Three mechanisms, in order of how much they carry:
    read and write (`{{WORKDIR}}`). This exists because the softer alternative was
    measured: a prompt that merely *warned* about the worktree still produced a
    path assembled from the wrong pieces, and the tool rejected it.
-3. **Worktree scoping.** A worker that strays outside its worktree is told the
-   write landed in the main checkout and would not be on its branch.
+3. **Worktree scoping.** Each coder's working directory is its own worktree,
+   and only its own module is taken back into the main checkout.
 
-**Scaling behaviour, stated honestly.** One agent request is ~20.5k tokens
-(10.4k tool definitions + 10.1k system prompt) against a 32k context window. That
-is the real ceiling and it is not comfortable: as the tool surface grows, the
-definitions grow, and truncation is silent (failure 4 in §4.4). Mitigations in
-place: the skill deny-list removes a large block of injected prompt, prompts have
-short per-role prompts, and a
-condenser can summarise history. **If the repository grows materially, the honest
-answer is that the per-request overhead must be cut — by disabling tools per role
-— before the context window supports it.** No measured scaling curve exists yet,
-because no run has completed.
+**Scaling behaviour, stated honestly.** With OpenHands' default tool set one
+agent request was ~20.5k tokens (10.4k tool definitions + 10.1k system prompt)
+against a 32k context window, and truncation is silent (failure 4 in §4.4).
+Mitigations in place: every agent profile enables only the `terminal` and
+`file_editor` tools (no browser tools, no `switch_llm`), the skill deny-list
+removes a large block of injected prompt, the role prompts are short, and the
+team chat passed to each prompt is capped at four messages of 300 characters.
+No measured scaling curve exists.
 
 ### 6.4 Security baseline — MET
 No unauthenticated model endpoint is exposed as a prerequisite. All four ports
@@ -400,8 +414,8 @@ the `think` parameter is ignored:
 | `/v1/chat/completions` | ignored | reasoning still emitted |
 
 Cost on a real three-file turn: 1156 completion tokens, 4602 characters of
-reasoning. The endpoint now runs `qwen2.5:7b-instruct`, which has no thinking
-mode to suppress.
+reasoning. The endpoint was moved to `qwen2.5:7b-instruct`, which has no thinking
+mode to suppress, and later to `llama3.1:8b` for the coders only (§2).
 
 That model then produced a second, subtler fault: with the full system prompt,
 the full task prompt and all 20 tool schemas together, it emitted ~39 tokens that
@@ -445,11 +459,15 @@ place to encode measurements like these, and one file to regenerate.
 | Four services to run | setup burden, more failure surface | Accepted; the alternatives do not buy a routing seam |
 | No database anywhere | loses LiteLLM virtual keys and cost tracking | Accepted: it is what keeps `master_key` off the critical path |
 
-**The one blocking item.** The coder stage has never completed a real agent run.
-The prompt-level cause is understood and the fix verified by replay (§7.1), but
-replay is not an agent run. Until `python3 scripts/pipeline.py --stages coder-1`
-produces a non-stub implementation, FR3 is unmet and FR4 cannot honestly be
-claimed.
+**Open items.**
+
+- Fix rounds rarely help. At temperature 0 a coder given its failures tends to
+  rewrite the same code, so the keep-if-better check usually restores the
+  previous version (both kept runs: every fix after the first round rejected).
+  A stronger coder model, or a higher `CODER_TEMPERATURE` for a model that
+  stays reliable at it, is the lever.
+- One of 11 tests fails in the latest run (§5.4).
+- A full run takes about 15–20 minutes on a 16 GB Mac.
 
 ---
 
@@ -462,8 +480,10 @@ feature, executed tests, updated docs, and a deployment-validation step.
 Verification entry points:
 
 ```bash
+python3 scripts/demo.py                # the six-stage run, then a summary of the results
+python3 scripts/demo.py --show         # the summary of the last run only
 python3 scripts/pipeline.py --check    # endpoints, proxy, agents
-python3 scripts/pipeline.py            # the six-stage run
+python3 scripts/pipeline.py            # the six-stage run on its own
 python3 scripts/pipeline.py --compare RUN_A RUN_B
 ./docker/validate.sh                   # deployability checks
 ```
@@ -476,16 +496,15 @@ python3 scripts/pipeline.py --compare RUN_A RUN_B
 |---|---|---|
 | Synopsis, 7–10 pages | this document | complete |
 | Setup guide | `SETUP.md` | complete |
-| Architecture output | `docs/{components,api,deployment,decisions}.md` | produced by the agent |
-| At least one implemented feature | `workspace/demo-project/` | **stubs only** — §5.3 |
-| Tests executed + results | `workspace/demo-project/tests/` (39 cases) | authored; run fails on the stubs — §5.4 |
-| Docs updated | `docs/*.md` | partial; `README.md` still the project plan — §5.5 |
-| Deployment validation step | `docker/validate.sh`, run by the deploy-validator stage | present, hand-written — §5.6 |
+| Architecture output | `docs/{components,api,deployment,decisions,handoff}.md` | produced by the agent |
+| At least one implemented feature | `workspace/demo-project/src/calc/` | produced by the two coders |
+| Tests executed + results | `workspace/demo-project/QUALITY.md` | 10 of 11 pass in the latest run |
+| Docs updated | `workspace/demo-project/README.md` | produced by the docs agent |
+| Deployment validation step | `docker/validate.sh`, reported in `docs/deployment-validation.md` | run every pipeline run |
 
-The honest summary: the evaluation, the architecture, the tooling and the
-verification harness are done. The demo run stalls at the implementation stage
-for the reason in §7.1, and one live run of the command in §9 is what closes the
-remaining four rows.
+The honest summary: the workflow delivers every artefact unattended on two
+small local models. Quality is bounded by those models — the documents are
+thin, and fix rounds rarely improve the code (§8).
 
 ## 11. Review of another group's work
 

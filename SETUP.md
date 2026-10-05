@@ -7,7 +7,7 @@ OpenHands agents. They use two local model servers, so nothing goes to the
 cloud. They work as a team: they share a team chat, and when tests fail the
 coders get the failures and try again.
 
-Plan on about 20 minutes for setup and 15–25 minutes for one run.
+Plan on about 20 minutes for setup and 15–20 minutes for one run.
 
 ---
 
@@ -79,10 +79,11 @@ downloads them, so give it a few minutes. You should see four `[ok]` lines:
 ## Step 5 — Run the team
 
 ```bash
-python3 scripts/pipeline.py
+python3 scripts/demo.py
 ```
 
-Watch the agents work live at <http://localhost:8000>.
+This runs the whole team (`scripts/pipeline.py`) and then prints a summary of
+what it produced. Watch the agents work live at <http://localhost:8000>.
 
 The roles run in this order. Each one must deliver its files before the next
 one starts:
@@ -109,6 +110,14 @@ those messages. At the end you get a summary like this:
 ```
 
 ## Step 6 — Look at the results
+
+```bash
+python3 scripts/demo.py --show
+```
+
+prints the last run again without running the team: pass/fail and time per
+stage, the team chat, the files each role wrote, the calculator in action, the
+test result and the deployment checks. To look yourself:
 
 | What | Where |
 | --- | --- |
@@ -140,6 +149,9 @@ python3 scripts/pipeline.py --compare RUN_A RUN_B  # compare two runs (folder na
   (`ENDPOINT_A_MODEL`, `ENDPOINT_B_ROLES`, …). The next run picks it up.
 - **Make the agents ask before running commands:** set `CONFIRMATION=risky`
   in `.env`.
+- **Let the coders try something new in fix rounds:** raise
+  `CODER_TEMPERATURE` in `.env` (default 0; `llama3.1:8b` starts writing tool
+  calls as text at 0.3, so only do this with a stronger coder model).
 - **Change what an agent is told:** every instruction is in `prompts/`, one
   file per role, plus the shared messages in `prompts/shared/`.
 
