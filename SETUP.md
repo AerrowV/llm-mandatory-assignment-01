@@ -37,7 +37,7 @@ cp .env.example .env
 
 The workflow uses two separate model servers. Open a terminal for each.
 
-**Terminal 1 — endpoint A** (planning roles, port 11434):
+**Terminal 1 — endpoint A** (planning and writing roles, port 11434):
 
 ```bash
 ollama serve
@@ -46,7 +46,7 @@ ollama serve
 If the Ollama app is already running, endpoint A is already up and you can
 skip this command.
 
-**Terminal 2 — endpoint B** (coding roles, port 11435):
+**Terminal 2 — endpoint B** (the two coders, port 11435):
 
 ```bash
 OLLAMA_HOST=127.0.0.1:11435 OLLAMA_MODELS=~/.ollama-b/models \
@@ -70,8 +70,8 @@ This starts the LiteLLM proxy and OpenHands in Docker. The first time, it
 downloads them, so give it a few minutes. You should see four `[ok]` lines:
 
 ```
-  [ok] endpoint A qwen2.5:3b -> architect,techlead,tester,docs
-  [ok] endpoint B llama3.1:8b -> coder-1,coder-2,deploy-validator
+  [ok] endpoint A qwen2.5:3b -> architect,techlead,tester,docs,deploy-validator
+  [ok] endpoint B llama3.1:8b -> coder-1,coder-2
   [ok] litellm up
   [ok] openhands up
 ```
@@ -95,7 +95,7 @@ one starts:
 | 4 | tester | A | runs the tests, writes `workspace/demo-project/QUALITY.md` |
 | ↺ | fix rounds | B | if tests fail, the coders get the failures and their last attempt and try again (up to 2 rounds; a fix is kept only if more tests pass) |
 | 5 | docs | A | `workspace/demo-project/README.md` |
-| 6 | deploy-validator | B | runs `docker/validate.sh`, writes `docs/deployment-validation.md` |
+| 6 | deploy-validator | A | runs `docker/validate.sh`, writes `docs/deployment-validation.md` |
 
 Every role ends with a short message to the team, and every later role sees
 those messages. At the end you get a summary like this:

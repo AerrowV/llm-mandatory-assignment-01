@@ -1,37 +1,43 @@
 ## Setup
 
-This calculator uses only the Python 3 standard library and does not require any installation.
+Python 3 standard library only, no additional installation required.
 
 ## Usage
 
-To use the calculator, run the following command:
+### Addition
 
 ```bash
-python3 run.py
+python3 run.py add 2 3
 ```
 
-The calculator supports four operations: addition, subtraction, multiplication, and division. Each operation can be invoked by running the corresponding command:
+### Subtraction
 
-- Addition: `python3 run.py add`
-- Subtraction: `python3 run.py subtract`
-- Multiplication: `python3 run.py multiply`
-- Division: `python3 run.py divide`
+```bash
+python3 run.py subtract 5 2
+```
 
-The calculator will print the result as a whole number without a decimal point.
+### Multiplication
+
+```bash
+python3 run.py multiply 4 2
+```
+
+### Division
+
+```bash
+python3 run.py divide 10 2
+```
 
 ## Runbook
 
-To run the calculator, use the following command:
-
-```bash
-python3 run.py
-```
-
-The calculator will exit with the following exit codes:
-- 0: The operation was successful.
-- 1: The operation was successful, but the result is zero.
-- 2: An error occurred during the operation.
+- **How to run**: Use `python3 run.py` followed by the operation and operands.
+- **Exit codes**:
+  - 0: Operation successful.
+  - 1: Division by zero.
+  - 2: Invalid operation or operands.
 
 ## Troubleshooting
 
-If you encounter an error message, please check the `QUALITY.md` file for known failures. If you receive an unexpected exit code, please refer to the `run.py` file for the correct exit codes and their meanings.
+- **Error:** The calculator will raise a `ValueError` when dividing by zero.
+- **Wrong exit code:** The calculator will return an exit code of 1 if the division by zero occurs.
+- **Known failures:** From the `QUALITY.md` file, the calculator fails when the operands are not integers or floats, and when the operation is not one of the four basic arithmetic operations.

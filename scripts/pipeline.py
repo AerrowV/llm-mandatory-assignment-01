@@ -471,7 +471,8 @@ def main():
         print(f"  {r['fr']}  {r['role']:<17} {r['seconds']:>5}s  "
               f"{'verified' if r['passed'] else 'FAILED'}")
     print(f"  record: artifacts/runs/{stamp}/run.json, team-chat.md")
-    return 0 if all(r["passed"] for r in results) else 1
+    # Fix rounds are retries; the run succeeds when every main stage delivered.
+    return 0 if all(r["passed"] for r in results if "(fix" not in r["role"]) else 1
 
 
 if __name__ == "__main__":

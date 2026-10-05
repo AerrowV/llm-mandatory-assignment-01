@@ -74,7 +74,7 @@ def profiles(env):
             "timeout": int(env["LLM_TIMEOUT"]),
             "model": f"openai/{role}",
             "native_tool_calling": True,
-            "temperature": 0.0,
+            "temperature": float(env["CODER_TEMPERATURE"]) if role in WORKER_MODULE else 0.0,
         }
         agent_path = STATE / "agent-profiles" / f"{role}.json"
         old = json.loads(agent_path.read_text()) if agent_path.exists() else {}
