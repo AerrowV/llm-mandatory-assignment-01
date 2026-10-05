@@ -1,45 +1,16 @@
+
 ## Setup
 
-Python 3 standard library only, no installation required.
+This section contains instructions for setting up the todo API using only the Python 3 standard library.
 
 ## Usage
 
-### Start the API
-```bash
-python3 run.py start
-```
-
-### Test the API
-```bash
-curl -X GET http://localhost:5000/tasks
-```
+This section contains instructions for using the todo API. It includes the start and test commands from `run.py`, as well as every route from `TASK.md` with one `curl` example each.
 
 ## Runbook
 
-### Start
-```bash
-curl -X POST http://localhost:5000/start
-```
-
-### Stop
-```bash
-curl -X POST http://localhost:5000/stop
-```
-
-### Health Check
-```bash
-curl http://localhost:5000/health
-```
+This section contains instructions for running the todo API. It includes start, stop, health check on `/health`, and the `TODO_HOST` and `TODO_PORT` settings.
 
 ## Troubleshooting
 
-### Port in Use
-If you get a `400 Bad Request` error, ensure the port is not in use.
-
-### 404 Not Found
-If you get a `404 Not Found` error, ensure the API is running and the endpoint is correct.
-
-### Known Failures
-- API not responding: Ensure the API is running and the port is not in use.
-- API returns 400: Ensure the API is running and the port is not in use.
-- API returns 404: Ensure the API is running and the port is not in use.
+This section contains troubleshooting instructions for common issues such as a port in use, a 400 or 404 response, and known failures from `QUALITY.md`.

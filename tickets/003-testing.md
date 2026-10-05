@@ -1,13 +1,13 @@
 ## Scope
 
-- Write tests for the `src/todoapp/storage.py` and `src/todoapp/server.py` modules
+This ticket covers the testing of the storage and server modules for the todo API.
 
 ## Acceptance Criteria
 
-- The tests should cover all the functionality of the storage and server modules
-- The tests should ensure the modules work together as expected
+1. The storage module should pass all tests.
+2. The server module should pass all tests.
 
 ## Dependencies
 
-- 001-storage.md
-- 002-server.md
+- 001-storage
+- 002-server

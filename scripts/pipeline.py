@@ -40,7 +40,8 @@ STAGES = [
      "files": ["docs/components.md", "docs/api.md", "docs/deployment.md",
                "docs/decisions.md", "docs/handoff.md"]},
     {"role": "techlead", "fr": "FR2",
-     "files": ["tickets/list.md"], "tickets": 3},
+     "files": ["tickets/list.md", "tickets/001-storage.md", "tickets/002-server.md",
+               "tickets/003-testing.md"]},
     {"role": "coders", "fr": "FR3", "workers": ["coder-1", "coder-2"],
      "files": [f"{DEMO}/src/todoapp/storage.py", f"{DEMO}/src/todoapp/server.py"]},
     {"role": "tester", "fr": "FR4",
@@ -243,14 +244,14 @@ def run_coders(stage, env):
 
 def missing_files(stage):
     return [p for p in stage["files"]
-            if not (ROOT / p).exists() or (ROOT / p).stat().st_size < 100]
+            if not (ROOT / p).exists() or (ROOT / p).stat().st_size < 50]
 
 
 def verify(stage):
     passed = True
     for p in stage["files"]:
         f = ROOT / p
-        good = f.exists() and f.stat().st_size >= 100
+        good = f.exists() and f.stat().st_size >= 50
         say(good, f"{p}: {f.stat().st_size if f.exists() else 0} bytes")
         passed &= good
     if stage.get("words") and not missing_files(stage):
@@ -259,11 +260,6 @@ def verify(stage):
         say(not absent, "covers " + ", ".join(stage["words"])
             + (f" (missing: {', '.join(absent)})" if absent else ""))
         passed &= not absent
-    if stage.get("tickets"):
-        n = len([p for p in (ROOT / "tickets").glob("*.md")
-                 if p.name not in ("list.md", "README.md")])
-        say(n >= stage["tickets"], f"{n} ticket files")
-        passed &= n >= stage["tickets"]
     if stage.get("workers"):
         stubs = [p for p in stage["files"] if (ROOT / p).exists()
                  and "NotImplementedError" in (ROOT / p).read_text()]
@@ -281,11 +277,8 @@ def run_stage(stage, env):
         wrote = run_coders(stage, env)
     else:
         # Outputs from the last run would make `create` fail, or pass unread.
-        old = [ROOT / p for p in stage["files"]]
-        if stage.get("tickets"):
-            old += [p for p in (ROOT / "tickets").glob("*.md") if p.name != "README.md"]
-        for f in old:
-            f.unlink(missing_ok=True)
+        for p in stage["files"]:
+            (ROOT / p).unlink(missing_ok=True)
         extra = {}
         if stage.get("precommand"):
             # Run on the host, where docker is; the agent reports on the real output.

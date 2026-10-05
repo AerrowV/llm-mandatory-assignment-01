@@ -1,9 +1,10 @@
-## Ordering Index
+# Ordering Index
 
-This file lists the tickets in the order they should be done.
-
-### Tickets
-
+## Storage
 - 001-storage.md
+
+## Server
 - 002-server.md
+
+## Testing
 - 003-testing.md
