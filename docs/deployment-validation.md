@@ -1,15 +1,21 @@
 ## Method
-The deployment script used is `docker/validate.sh`, which fits this project because it has already been run on the host and provides a comprehensive validation of the deployability of the project.
+The deployment script `docker/validate.sh` was used because it is the most relevant and efficient method for validating the deployability of the demo project.
 
 ## Checklist
-* configuration: PASS - `docker compose file parses`, PASS - `.env has a proxy key`, PASS - `generated config lists all 7 roles`
-* security baseline: PASS - `every published port is bound to 127.0.0.1`
-* demo project: PASS - `modules compile`, FAIL - `unit tests pass` (9 failures, 1 error), FAIL - `server starts and answers /health` (todo API listening on http://127.0.0.1:8765)
-* running stack: PASS - `litellm is healthy`, PASS - `openhands answers`
+* configuration: PASS - docker compose file parses
+* configuration: PASS - .env has a proxy key
+* configuration: PASS - generated config lists all 7 roles
+* security baseline: PASS - every published port is bound to 127.0.0.1
+* demo project: PASS - modules compile
+* demo project: FAIL - unit tests pass
+* demo project: FAIL - the CLI runs: run.py add 2 3 prints 5
+* running stack: PASS - litellm is healthy
+* running stack: PASS - openhands answers
 
 ## Verdict
-The script's verdict is: `7 passed, 2 failed. NOT deployable.`
+7 passed, 2 failed
+NOT deployable
 
 ## Risks
-The failures mean that the unit tests are not passing and the server is not starting and answering /health. These issues need to be fixed first.
+* The project is not deployable due to the two failed checks: unit tests pass and the CLI runs: run.py add 2 3 prints 5. These issues need to be addressed first.
 

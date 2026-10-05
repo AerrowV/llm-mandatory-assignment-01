@@ -1,0 +1,53 @@
+{
+  "started": "20261005T074656Z",
+  "routing": {
+    "A": {
+      "model": "qwen2.5:3b",
+      "roles": "architect,techlead,docs"
+    },
+    "B": {
+      "model": "llama3.1:8b",
+      "roles": "coder-1,coder-2,tester,deploy-validator"
+    }
+  },
+  "stages": [
+    {
+      "role": "tester",
+      "fr": "FR4",
+      "passed": true,
+      "seconds": 186,
+      "files": [
+        "workspace/demo-project/QUALITY.md"
+      ]
+    },
+    {
+      "role": "coders (fix 1)",
+      "fr": "FR3",
+      "passed": true,
+      "seconds": 96,
+      "files": [
+        "workspace/demo-project/src/calc/ops.py",
+        "workspace/demo-project/src/calc/cli.py"
+      ]
+    },
+    {
+      "role": "coders (fix 2)",
+      "fr": "FR3",
+      "passed": true,
+      "seconds": 77,
+      "files": [
+        "workspace/demo-project/src/calc/ops.py",
+        "workspace/demo-project/src/calc/cli.py"
+      ]
+    },
+    {
+      "role": "docs",
+      "fr": "FR5",
+      "passed": false,
+      "seconds": 36,
+      "files": [
+        "workspace/demo-project/README.md"
+      ]
+    }
+  ]
+}

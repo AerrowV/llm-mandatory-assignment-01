@@ -21,7 +21,7 @@ import time
 import urllib.request
 from datetime import datetime, timezone
 
-from config import PACKAGE, ROLES, ROOT, WORKER_MODULE, endpoint_of, sync
+from config import PACKAGE, ROLES, ROOT, WORKER_MODULE, WORKER_TESTS, endpoint_of, sync
 
 WORKDIR = "/opt/project"                 # the repo, as mounted in the container
 DEMO = "workspace/demo-project"
@@ -32,7 +32,7 @@ DONE = {"finished", "error", "stopped", "paused", "idle", "stuck"}
 NUDGES = 2
 FIX_ROUNDS = 2
 TEAM = []          # (role, message): the team chat, in order
-FIX = None         # failing-test output while a fix round is running
+FIX = {}           # worker -> its failing tests, while a fix round is running
 
 # What each stage must leave behind; `words` must appear in the first file.
 STAGES = [
@@ -45,7 +45,9 @@ STAGES = [
     {"role": "coders", "fr": "FR3", "workers": ["coder-1", "coder-2"],
      "files": [f"{DEMO}/src/{PACKAGE}/{WORKER_MODULE[w]}" for w in ("coder-1", "coder-2")]},
     {"role": "tester", "fr": "FR4",
-     "files": [f"{DEMO}/QUALITY.md"], "words": ["test result", "limitation"]},
+     "files": [f"{DEMO}/QUALITY.md"], "words": ["test result", "limitation"],
+     "precommand": f"cd {DEMO} && python3 -m unittest discover -s tests -v 2>&1; "
+                   "python3 -m compileall -q src && echo 'static check (compileall): ok'"},
     {"role": "docs", "fr": "FR5",
      "files": [f"{DEMO}/README.md"],
      "words": ["setup", "usage", "runbook", "troubleshoot"]},
@@ -119,9 +121,9 @@ def prompt_for(role, workdir, extra=None):
     chat = "\n".join(f"- **{who}**: {msg}" for who, msg in TEAM[-4:]) or "(no messages yet)"
     module = WORKER_MODULE.get(role, "")
     text = fill(ROLES[role], WORKDIR=workdir, MODULE=module, **(extra or {}))
-    if FIX and module:
+    if role in FIX:
         text += "\n\n" + fill("shared/fix-round", WORKDIR=workdir, MODULE=module,
-                                FAILURES=FIX)
+                                FAILURES=FIX[role])
     return text + "\n\n" + fill("shared/team-chat", CHAT=chat)
 
 
@@ -163,17 +165,19 @@ def listen(role, cid):
     except Exception:
         reply = ""
     reply = " ".join(reply.split())[:300]
-    if reply:
+    # A tool call written as text is a failure, not a message; posting it would
+    # teach the next role to do the same.
+    if reply and '{"name"' not in reply:
         TEAM.append((role, reply))
         print(f"  {role} says: {reply[:160]}")
 
 
-def nudge(cid, missing, env, text=None):
+def nudge(cid, missing, env, text=None, note=""):
     """Small models often paste a file into chat instead of writing it."""
     paths = "\n".join(f"- {WORKDIR}/{p}" for p in missing)
     api(f"/api/conversations/{cid}/events", {"role": "user", "run": True, "content": [{
         "type": "text",
-        "text": text or fill("shared/missing-files", PATHS=paths)}]})
+        "text": text or fill("shared/missing-files", PATHS=paths, NOTE=note)}]})
     time.sleep(3)
     wait(cid, time.time() + int(env["STAGE_BUDGET"]))
 
@@ -218,7 +222,9 @@ def collect(worker):
 
 
 def run_coders(stage, env):
-    dirs = {w: worktree(w) for w in stage["workers"]}
+    # In a fix round only the coders whose own tests fail go back to work.
+    workers = [w for w in stage["workers"] if w in FIX] or stage["workers"]
+    dirs = {w: worktree(w) for w in workers}
     cids = {}
 
     def work(w):
@@ -231,18 +237,18 @@ def run_coders(stage, env):
             # Coders must read the spec (and their last attempt) before writing,
             # or they write generic code from memory.
             prev = (f"\n   Then `view` `{dirs[w]}/src/{PACKAGE}/{WORKER_MODULE[w]}.prev`, "
-                    "your previous version." if FIX else "")
+                    "your previous version." if w in FIX else "")
             nudge(cids[w], [module], env, fill(
                 "shared/missing-module", PATH=f"{WORKDIR}/{module}", WORKDIR=dirs[w], PREV=prev))
 
-    threads = [threading.Thread(target=work, args=(w,)) for w in stage["workers"]]
+    threads = [threading.Thread(target=work, args=(w,)) for w in workers]
     for t in threads:
         t.start()
     for t in threads:
         t.join()
-    for w in stage["workers"]:
+    for w in workers:
         listen(w, cids[w])
-    return all([collect(w) for w in stage["workers"]])
+    return all([collect(w) for w in workers])
 
 
 # ------------------------------------------------------------------ a stage
@@ -250,6 +256,15 @@ def run_coders(stage, env):
 def missing_files(stage):
     return [p for p in stage["files"]
             if not (ROOT / p).exists() or (ROOT / p).stat().st_size < 50]
+
+
+def missing_words(stage):
+    """Required terms the stage's first file does not contain yet."""
+    f = ROOT / stage["files"][0]
+    if not stage.get("words") or not f.exists():
+        return []
+    text = f.read_text().lower()
+    return [w for w in stage["words"] if w not in text]
 
 
 def verify(stage):
@@ -286,7 +301,7 @@ def run_stage(stage, env):
             (ROOT / p).unlink(missing_ok=True)
         extra = {}
         if stage.get("precommand"):
-            # Run on the host, where docker is; the agent reports on the real output.
+            # Run on the host (docker, real tests); the agent reports on the real output.
             out = subprocess.run(stage["precommand"], cwd=ROOT, shell=True,
                                  capture_output=True, text=True)
             extra["COMMAND_OUTPUT"] = "\n".join(
@@ -294,13 +309,18 @@ def run_stage(stage, env):
         workdir = f"{WORKDIR}/{DEMO}" if role in ("tester", "docs") else WORKDIR
         cid = run_agent(role, workdir, env, extra)
         for _ in range(NUDGES):
-            missing = missing_files(stage)
+            missing, absent = missing_files(stage), missing_words(stage)
+            if absent and not missing:  # written, but stopped before the end
+                missing = stage["files"][:1]
             if not missing:
                 break
-            print(f"  [warn] {role} did not write {', '.join(missing)}; asking again")
-            for m in missing:  # a too-small file would make `create` refuse
+            print(f"  [warn] {role} did not write {', '.join(missing)}"
+                  + (f" (missing: {', '.join(absent)})" if absent else "") + "; asking again")
+            for m in missing:  # an incomplete file would make `create` refuse
                 (ROOT / m).unlink(missing_ok=True)
-            nudge(cid, missing, env)
+            note = (f"It must cover all of: {', '.join(stage['words'])}."
+                    if absent else "")
+            nudge(cid, missing, env, note=note)
         listen(role, cid)
     passed = verify(stage) and (wrote if stage.get("workers") else True)
     return {"role": role, "fr": stage["fr"], "passed": passed,
@@ -311,19 +331,27 @@ def run_stage(stage, env):
 # ---------------------------------------------------------------- fix loop
 
 def run_tests():
-    """Run the demo tests on the host: (tests passing, failure summary or None)."""
+    """Run the demo tests on the host.
+
+    Returns (tests passing, summary or None, {test file: [failing test names]}).
+    """
     out = subprocess.run([sys.executable, "-m", "unittest", "discover", "-s", "tests"],
                          cwd=ROOT / DEMO, capture_output=True, text=True, timeout=120)
     lines = out.stderr.splitlines()
     ran = int(next((l.split()[1] for l in lines if l.startswith("Ran ")), 0))
     bad = sum(int(n) for n in re.findall(r"(?:failures|errors)=(\d+)", lines[-1] if lines else ""))
     if out.returncode == 0:
-        return ran, None
+        return ran, None, {}
+    failing = {}
+    for l in lines:
+        m = re.match(r"(FAIL|ERROR): (\w+) \(([\w.]+)\)", l)
+        if m:
+            # "ERROR: test_cli (unittest.loader._FailedTest.test_cli)" = the file did not import
+            module = m[2] if m[3].startswith("unittest.") else m[3].split(".")[0]
+            failing.setdefault(module, []).append(f"- {m[1]}: {m[2]}")
     # Test names only: a long failure dump pushes the 8b model into answering in text.
-    names = [re.sub(r" \(.*\)$", "", l) for l in lines if l.startswith(("FAIL:", "ERROR:"))]
-    imports = [l for l in lines if l.startswith(("ImportError", "ModuleNotFoundError"))]
-    summary = "\n".join(f"- {l}" for l in (names[:8] + imports[:2])) + "\n" + lines[-1]
-    return ran - bad, summary
+    summary = "\n".join(n for names in failing.values() for n in names[:8]) + "\n" + lines[-1]
+    return ran - bad, summary, failing
 
 
 # ------------------------------------------------------------- compare runs
@@ -367,19 +395,22 @@ def main():
         # The team works it out: failing tests go back to the coders, then the
         # tester checks again.
         for round_ in range(1, FIX_ROUNDS + 1 if stage["role"] == "tester" else 1):
-            passing, failures = run_tests()
+            passing, failures, failing = run_tests()
             if not failures:
                 print(f"  all {passing} tests pass - no fix round needed")
                 break
-            print(f"\n== fix round {round_}: {passing} tests pass, back to the coders")
+            # Each coder gets only its own failing tests; failures elsewhere go to both.
+            FIX = {w: "\n".join(failing[t]) + "\n" for w, t in WORKER_TESTS.items() if t in failing}
+            if not FIX:
+                FIX = {w: failures for w in WORKER_TESTS}
+            print(f"\n== fix round {round_}: {passing} tests pass, back to {', '.join(FIX)}")
             modules = [ROOT / p for p in by_role["coders"]["files"]]
             before = {m: m.read_text() for m in modules}
-            FIX = failures[:800]
-            TEAM.append(("test run", f"{failures.splitlines()[-1]} - coders, please fix."))
+            TEAM.append(("test run", f"{failures.splitlines()[-1]} - {', '.join(FIX)}, please fix."))
             results.append(run_stage(by_role["coders"], env))
             results[-1]["role"] += f" (fix {round_})"
-            FIX = None
-            now, _ = run_tests()
+            FIX = {}
+            now, _, _ = run_tests()
             if now <= passing:
                 # Keep a fix only if it helps; a weaker attempt goes back out.
                 for m, text in before.items():

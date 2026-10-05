@@ -22,6 +22,7 @@ ROLES = {
 }
 PACKAGE = "calc"   # the demo project's package: workspace/demo-project/src/calc
 WORKER_MODULE = {"coder-1": "ops.py", "coder-2": "cli.py"}
+WORKER_TESTS = {"coder-1": "test_ops", "coder-2": "test_cli"}   # tests of each module
 
 
 def load_env():

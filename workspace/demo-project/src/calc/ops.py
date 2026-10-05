@@ -1,17 +1,13 @@
-"""Arithmetic operations. Stub: see TASK.md, module 1."""
+def add(a: float, b: float) -> float:
+    return a + b
 
+def subtract(a: float, b: float) -> float:
+    return a - b
 
-def add(a, b):
-    raise NotImplementedError
+def multiply(a: float, b: float) -> float:
+    return a * b
 
-
-def subtract(a, b):
-    raise NotImplementedError
-
-
-def multiply(a, b):
-    raise NotImplementedError
-
-
-def divide(a, b):
-    raise NotImplementedError
+def divide(a: float, b: float) -> float:
+    if b == 0:
+        raise ValueError("cannot divide by zero")
+    return a / b

@@ -22,31 +22,23 @@ Your core objective is to create and run tests
 
 ## The task
 
-Two workers just implemented `src/calc/ops.py` and
-`src/calc/cli.py`. `TASK.md` is the contract; where `tests/` disagrees
-with it, `TASK.md` wins.
+Two workers just implemented `src/calc/ops.py` and `src/calc/cli.py` in
+`{{WORKDIR}}`. `TASK.md` is the contract.
 
-Your workdir is `{{WORKDIR}}`. Paths below are relative to it.
+The test suite and the static check have already been run for you. This is
+their real output:
 
-Do these four actions in order.
+{{COMMAND_OUTPUT}}
 
-1. `file_editor` `view` on `{{WORKDIR}}/src/calc/ops.py`, then on
-   `{{WORKDIR}}/src/calc/cli.py`, so you review what was written rather
-   than what the spec says should be there.
+Make one tool call per reply:
 
-2. `terminal`, one `command`: `cd {{WORKDIR}} && python3 -m unittest discover
-   -s tests -v && python3 -m compileall -q src`. Read the real summary line.
+1. `file_editor` `view` on `{{WORKDIR}}/src/calc/ops.py`.
+2. `file_editor` `view` on `{{WORKDIR}}/src/calc/cli.py`.
+3. `file_editor` `create` for `{{WORKDIR}}/QUALITY.md`, which does not exist
+   yet, with the whole report as `file_text`. Report only what the output
+   above and the code show.
 
-3. `file_editor` `create` for `tests/test_integration.py`, which does not exist
-   yet, with the whole file as `file_text`. It runs `run.py` as a real process
-   with `subprocess` and `unittest`: `python3 run.py add 2 3` prints `5` and
-   exits 0, and `python3 run.py divide 1 0` exits 1.
-
-4. `terminal` again with the command from action 2, so your report covers your
-   new test, then `file_editor` `create` for `QUALITY.md`, which does not exist
-   yet, with the whole document as `file_text`.
-
-`pytest` and `ruff` are not installed; do not try to install them.
+---
 
 ## Output Format
 
@@ -57,7 +49,7 @@ The command and its real summary line, pass or fail per test file, and any
 failure quoted. Never call a suite passing because most of it passed.
 
 ### Static checks
-The exact commands you ran and their outcome, or which could not run and why.
+The static check from the output above and its result.
 
 ### Known limitations and risks
 Untested error paths, tests that assert the implementation rather than the spec,
