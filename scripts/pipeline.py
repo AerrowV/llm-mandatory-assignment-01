@@ -5,10 +5,15 @@
     python3 scripts/pipeline.py --from tester       # resume at a stage
     python3 scripts/pipeline.py --check             # preflight only
     python3 scripts/pipeline.py --compare RUN_A RUN_B
+
+The roles work as a team: each one's final reply is posted to a shared team
+chat that every later role reads, and failing tests go back to the coders for
+a fix round before the tester checks again.
 """
 
 import json
 import re
+import shutil
 import subprocess
 import sys
 import threading
@@ -25,6 +30,9 @@ API_KEY = ROOT / "openhands" / "state" / "agent-canvas" / "api-key.txt"
 RUNS = ROOT / "artifacts" / "runs"
 DONE = {"finished", "error", "stopped", "paused", "idle", "stuck"}
 NUDGES = 2
+FIX_ROUNDS = 2
+TEAM = []          # (role, message): the team chat, in order
+FIX = None         # failing-test output while a fix round is running
 
 # What each stage must leave behind; `words` must appear in the first file.
 STAGES = [
@@ -98,12 +106,22 @@ def preflight(env):
 
 # ------------------------------------------------------------- one agent run
 
-def prompt_for(role, workdir, extra=None):
-    text = (ROOT / "prompts" / f"{ROLES[role]}.md").read_text()
-    values = {"WORKDIR": workdir, "MODULE": WORKER_MODULE.get(role, ""), **(extra or {})}
+def fill(name, **values):
+    """Every text an agent sees is a file in prompts/; this fills its {{KEYS}}."""
+    text = (ROOT / "prompts" / f"{name}.md").read_text()
     for key, value in values.items():
         text = text.replace("{{%s}}" % key, value)
     return text
+
+
+def prompt_for(role, workdir, extra=None):
+    chat = "\n".join(f"- **{who}**: {msg}" for who, msg in TEAM[-4:]) or "(no messages yet)"
+    module = WORKER_MODULE.get(role, "")
+    text = fill(ROLES[role], WORKDIR=workdir, MODULE=module, **(extra or {}))
+    if FIX and module:
+        text += "\n\n" + fill("shared/fix-round", WORKDIR=workdir, MODULE=module,
+                                FAILURES=FIX)
+    return text + "\n\n" + fill("shared/team-chat", CHAT=chat)
 
 
 def profile_id(role):
@@ -115,7 +133,7 @@ def wait(cid, deadline):
     while time.time() < deadline:
         if api(f"/api/conversations/{cid}").get("execution_status") in DONE:
             return
-        time.sleep(5)
+        time.sleep(2)
     print(f"  [warn] {cid} hit the stage budget, pausing it")
     api(f"/api/conversations/{cid}/pause", {})
 
@@ -137,15 +155,25 @@ def run_agent(role, workdir, env, extra=None):
     return cid
 
 
+def listen(role, cid):
+    """Post the agent's final reply to the team chat."""
+    try:
+        reply = api(f"/api/conversations/{cid}/agent_final_response").get("response", "")
+    except Exception:
+        reply = ""
+    reply = " ".join(reply.split())[:300]
+    if reply:
+        TEAM.append((role, reply))
+        print(f"  {role} says: {reply[:160]}")
+
+
 def nudge(cid, missing, env):
     """Small models often paste a file into chat instead of writing it."""
     paths = "\n".join(f"- {WORKDIR}/{p}" for p in missing)
     api(f"/api/conversations/{cid}/events", {"role": "user", "run": True, "content": [{
         "type": "text",
-        "text": "These files still do not exist:\n\n" + paths + "\n\nCall `file_editor` "
-                "with `command` `create`, `path` set to the absolute path and the whole "
-                "file as `file_text`. One file per call."}]})
-    time.sleep(10)
+        "text": fill("shared/missing-files", PATHS=paths)}]})
+    time.sleep(3)
     wait(cid, time.time() + int(env["STAGE_BUDGET"]))
 
 
@@ -154,10 +182,20 @@ def nudge(cid, missing, env):
 def worktree(worker):
     path = ROOT / ".worktrees" / worker
     git("worktree", "remove", "--force", str(path))
+    # An interrupted run can leave the folder behind, and `worktree add` refuses
+    # an existing path - the worker then runs in an empty directory.
+    shutil.rmtree(path, ignore_errors=True)
+    git("worktree", "prune")
     # --relative-paths so the worktree's .git pointer also resolves in the container.
-    git("worktree", "add", "--relative-paths", "-B", f"agent/{worker}", str(path))
-    # file_editor `create` refuses to overwrite, so remove the stub first.
-    (path / DEMO / "src" / "todoapp" / WORKER_MODULE[worker]).unlink(missing_ok=True)
+    made = git("worktree", "add", "--relative-paths", "-B", f"agent/{worker}", str(path))
+    if made.returncode:
+        raise SystemExit(f"git worktree add failed for {worker}: {made.stderr.strip()}")
+    module = path / DEMO / "src" / "todoapp" / WORKER_MODULE[worker]
+    if FIX:  # in a fix round the worker starts from its own last attempt
+        module.with_suffix(".py.prev").write_text(
+            (ROOT / DEMO / "src" / "todoapp" / WORKER_MODULE[worker]).read_text())
+    # file_editor `create` refuses to overwrite, so remove the file first.
+    module.unlink(missing_ok=True)
     return f"{WORKDIR}/.worktrees/{worker}/{DEMO}"
 
 
@@ -166,6 +204,7 @@ def collect(worker):
     path = ROOT / ".worktrees" / worker
     module = f"{DEMO}/src/todoapp/{WORKER_MODULE[worker]}"
     wrote = (path / module).exists()
+    (path / f"{module}.prev").unlink(missing_ok=True)
     git("-C", str(path), "add", "-A")
     # Unsigned: these are throwaway harness commits, not the user's. A worker
     # that writes the same file as last time leaves nothing to commit; that is fine.
@@ -179,12 +218,24 @@ def collect(worker):
 
 def run_coders(stage, env):
     dirs = {w: worktree(w) for w in stage["workers"]}
-    threads = [threading.Thread(target=run_agent, args=(w, dirs[w], env))
-               for w in stage["workers"]]
+    cids = {}
+
+    def work(w):
+        cids[w] = run_agent(w, dirs[w], env)
+        module = f".worktrees/{w}/{DEMO}/src/todoapp/{WORKER_MODULE[w]}"
+        for _ in range(NUDGES):
+            if (ROOT / module).exists():
+                break
+            print(f"  [warn] {w} did not write its module; asking again")
+            nudge(cids[w], [module], env)
+
+    threads = [threading.Thread(target=work, args=(w,)) for w in stage["workers"]]
     for t in threads:
         t.start()
     for t in threads:
         t.join()
+    for w in stage["workers"]:
+        listen(w, cids[w])
     return all([collect(w) for w in stage["workers"]])
 
 
@@ -249,11 +300,31 @@ def run_stage(stage, env):
             if not missing:
                 break
             print(f"  [warn] {role} did not write {', '.join(missing)}; asking again")
+            for m in missing:  # a too-small file would make `create` refuse
+                (ROOT / m).unlink(missing_ok=True)
             nudge(cid, missing, env)
+        listen(role, cid)
     passed = verify(stage) and (wrote if stage.get("workers") else True)
     return {"role": role, "fr": stage["fr"], "passed": passed,
             "seconds": round(time.time() - t0),
             "files": [p for p in stage["files"] if (ROOT / p).exists()]}
+
+
+# ---------------------------------------------------------------- fix loop
+
+def run_tests():
+    """Run the demo tests on the host: (tests passing, failure summary or None)."""
+    out = subprocess.run([sys.executable, "-m", "unittest", "discover", "-s", "tests"],
+                         cwd=ROOT / DEMO, capture_output=True, text=True, timeout=120)
+    lines = out.stderr.splitlines()
+    ran = int(next((l.split()[1] for l in lines if l.startswith("Ran ")), 0))
+    bad = sum(int(n) for n in re.findall(r"(?:failures|errors)=(\d+)", lines[-1] if lines else ""))
+    if out.returncode == 0:
+        return ran, None
+    summary = "\n".join([l for l in lines if l.startswith(("FAIL:", "ERROR:", "AssertionError",
+                                                             "ModuleNotFoundError", "ImportError"))][:15]
+                        + lines[-1:])
+    return ran - bad, summary
 
 
 # ------------------------------------------------------------- compare runs
@@ -272,6 +343,7 @@ def compare(a, b):
 
 
 def main():
+    global FIX
     args = sys.argv[1:]
     if args[:1] == ["--compare"]:
         return compare(args[1], args[2])
@@ -287,11 +359,40 @@ def main():
 
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     results = []
+    by_role = {s["role"]: s for s in STAGES}
     for stage in stages:
         results.append(run_stage(stage, env))
         if not results[-1]["passed"]:
             print(f"\nstopping: {stage['role']} did not deliver; later stages depend on it")
             break
+        # The team works it out: failing tests go back to the coders, then the
+        # tester checks again.
+        for round_ in range(1, FIX_ROUNDS + 1 if stage["role"] == "tester" else 1):
+            passing, failures = run_tests()
+            if not failures:
+                print(f"  all {passing} tests pass - no fix round needed")
+                break
+            print(f"\n== fix round {round_}: {passing} tests pass, back to the coders")
+            modules = [ROOT / p for p in by_role["coders"]["files"]]
+            before = {m: m.read_text() for m in modules}
+            FIX = failures[:800]
+            TEAM.append(("test run", f"{failures.splitlines()[-1]} - coders, please fix."))
+            results.append(run_stage(by_role["coders"], env))
+            results[-1]["role"] += f" (fix {round_})"
+            FIX = None
+            now, _ = run_tests()
+            if now <= passing:
+                # Keep a fix only if it helps; a weaker attempt goes back out.
+                for m, text in before.items():
+                    m.write_text(text)
+                print(f"  fix rejected: {now} tests pass, not more than {passing}; previous code kept")
+                TEAM.append(("test run", f"Fix rejected ({now} passing, before {passing}); "
+                                         "previous code kept."))
+                continue
+            print(f"  fix kept: {now} tests pass, up from {passing}")
+            TEAM.append(("test run", f"Fix kept: {now} tests pass, up from {passing}."))
+            results.append(run_stage(by_role["tester"], env))
+            results[-1]["role"] += f" (fix {round_})"
 
     run_dir = RUNS / stamp
     run_dir.mkdir(parents=True)
@@ -299,13 +400,15 @@ def main():
                for l in ("A", "B")}
     (run_dir / "run.json").write_text(json.dumps(
         {"started": stamp, "routing": routing, "stages": results}, indent=2) + "\n")
+    (run_dir / "team-chat.md").write_text(
+        "# Team chat\n\n" + "\n\n".join(f"**{who}**: {msg}" for who, msg in TEAM) + "\n")
 
     print("\n== summary")
     for r in results:
         print(f"  {r['fr']}  {r['role']:<17} {r['seconds']:>5}s  "
               f"{'verified' if r['passed'] else 'FAILED'}")
-    print(f"  record: artifacts/runs/{stamp}/run.json")
-    return 0 if all(r["passed"] for r in results) and len(results) == len(stages) else 1
+    print(f"  record: artifacts/runs/{stamp}/run.json, team-chat.md")
+    return 0 if all(r["passed"] for r in results) else 1
 
 
 if __name__ == "__main__":

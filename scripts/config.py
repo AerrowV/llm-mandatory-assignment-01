@@ -84,6 +84,10 @@ def profiles(env):
             "agent_kind": "openhands",
             "llm_profile_ref": role,
             "agent": "CodeActAgent",
+            # Only what the roles use. The default adds 13 browser tools and
+            # switch_llm, which every request re-sends and the model re-reads.
+            "tools": [{"name": "terminal"}, {"name": "file_editor"}],
+            "enable_switch_llm_tool": False,
             # Bundled skills are injected into every prompt unless denied here.
             "disabled_skills": env["DISABLED_SKILLS"].split(","),
         }

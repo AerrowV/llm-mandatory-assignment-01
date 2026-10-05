@@ -5,6 +5,15 @@
   "agent_kind": "openhands",
   "llm_profile_ref": "techlead",
   "agent": "CodeActAgent",
+  "tools": [
+    {
+      "name": "terminal"
+    },
+    {
+      "name": "file_editor"
+    }
+  ],
+  "enable_switch_llm_tool": false,
   "disabled_skills": [
     "add-javadoc",
     "add-skill",

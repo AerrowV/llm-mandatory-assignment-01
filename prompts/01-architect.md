@@ -41,7 +41,9 @@ endpoint each Ollama server exposes, the LiteLLM `/v1/chat/completions` and
 `/v1/models` routes, and the OpenHands conversation API the pipeline calls. For
 each: method, path, the parameters it takes, the response shape, and the errors
 it returns. If a contract is specified in code, quote the real field names from
-that code rather than describing it from memory.
+that code rather than describing it from memory. Write it as one Markdown
+table per interface (columns: method, path, parameters, response, errors), with
+no JSON and no code blocks.
 
 ### {{WORKDIR}}/docs/deployment.md
 Deployment topology and constraints: what runs where, which ports are published,
