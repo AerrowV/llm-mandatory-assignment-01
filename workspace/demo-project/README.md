@@ -1,31 +1,37 @@
-
 ## Setup
 
-Python 3 standard library only, no external installations required.
+This calculator uses only the Python 3 standard library and does not require any installation.
 
 ## Usage
 
-### Operations
+To use the calculator, run the following command:
 
-- Addition: `python3 run.py add 2 3`
-- Subtraction: `python3 run.py subtract 5 2`
-- Multiplication: `python3 run.py multiply 4 2`
-- Division: `python3 run.py divide 10 2`
+```bash
+python3 run.py
+```
 
-### Test Command
+The calculator supports four operations: addition, subtraction, multiplication, and division. Each operation can be invoked by running the corresponding command:
 
-To run tests: `python3 run.py test`
+- Addition: `python3 run.py add`
+- Subtraction: `python3 run.py subtract`
+- Multiplication: `python3 run.py multiply`
+- Division: `python3 run.py divide`
+
+The calculator will print the result as a whole number without a decimal point.
 
 ## Runbook
 
-- To run the calculator: `python3 run.py`
-- Exit codes:
-  - 0: Success
-  - 1: Invalid operation
-  - 2: Division by zero
+To run the calculator, use the following command:
+
+```bash
+python3 run.py
+```
+
+The calculator will exit with the following exit codes:
+- 0: The operation was successful.
+- 1: The operation was successful, but the result is zero.
+- 2: An error occurred during the operation.
 
 ## Troubleshooting
 
-- Error message: `python3 run.py add 2 0` will result in an error as division by zero is not allowed.
-- Wrong exit code: If the calculator exits with code 1, it means the operation is invalid.
-- Known failures: From the `QUALITY.md` file, the calculator fails when dividing by zero and when the operation is invalid.
+If you encounter an error message, please check the `QUALITY.md` file for known failures. If you receive an unexpected exit code, please refer to the `run.py` file for the correct exit codes and their meanings.

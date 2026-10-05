@@ -1,6 +1,6 @@
 def main(argv: list[str]) -> int:
     if len(argv) != 4:
-        print(f"error: wrong number of arguments: {argv}")
+        print(f"error: wrong number of arguments: {len(argv)}")
         return 2
     op, a, b = argv
     try:

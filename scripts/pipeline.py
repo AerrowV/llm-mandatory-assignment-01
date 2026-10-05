@@ -86,7 +86,7 @@ def git(*args):
 
 # ---------------------------------------------------------------- preflight
 
-def preflight(env):
+def preflight(env, routing_changed=False):
     for letter in ("A", "B"):
         url = f"http://127.0.0.1:{env[f'ENDPOINT_{letter}_PORT']}/api/tags"
         say(reachable(url), f"endpoint {letter} {env[f'ENDPOINT_{letter}_MODEL']} "
@@ -94,6 +94,10 @@ def preflight(env):
         if not reachable(url):
             return False
     subprocess.run(["docker", "compose", "up", "-d"], cwd=ROOT, capture_output=True)
+    if routing_changed:
+        # LiteLLM reads endpoints/config.yml only at startup.
+        print("  routing in .env changed - restarting litellm")
+        subprocess.run(["docker", "compose", "restart", "litellm"], cwd=ROOT, capture_output=True)
     for name, url in (("litellm", "http://localhost:4000/health/liveliness"),
                       ("openhands", AGENT)):
         for _ in range(60):
@@ -308,12 +312,19 @@ def run_stage(stage, env):
                 re.sub(r"\x1b\[[0-9;]*m", "", out.stdout + out.stderr).splitlines()[-60:])
         workdir = f"{WORKDIR}/{DEMO}" if role in ("tester", "docs") else WORKDIR
         cid = run_agent(role, workdir, env, extra)
-        for _ in range(NUDGES):
+        # Keep asking while each reminder gets more written; small models often
+        # manage one file per turn. Stop after NUDGES reminders in a row that
+        # get nothing new written.
+        last, stalled = None, 0
+        while True:
             missing, absent = missing_files(stage), missing_words(stage)
             if absent and not missing:  # written, but stopped before the end
                 missing = stage["files"][:1]
-            if not missing:
+            todo = len(missing) + len(absent)  # files and sections still to write
+            stalled = stalled + 1 if last is not None and todo >= last else 0
+            if not missing or stalled >= NUDGES:
                 break
+            last = todo
             print(f"  [warn] {role} did not write {', '.join(missing)}"
                   + (f" (missing: {', '.join(absent)})" if absent else "") + "; asking again")
             for m in missing:  # an incomplete file would make `create` refuse
@@ -343,12 +354,22 @@ def run_tests():
     if out.returncode == 0:
         return ran, None, {}
     failing = {}
-    for l in lines:
-        m = re.match(r"(FAIL|ERROR): (\w+) \(([\w.]+)\)", l)
-        if m:
-            # "ERROR: test_cli (unittest.loader._FailedTest.test_cli)" = the file did not import
-            module = m[2] if m[3].startswith("unittest.") else m[3].split(".")[0]
-            failing.setdefault(module, []).append(f"- {m[1]}: {m[2]}")
+    # unittest prints one block per failure, separated by a line of "="s.
+    for block in re.split(r"^=+$", out.stderr, flags=re.M)[1:]:
+        rows = [r for r in block.splitlines() if r.strip() and not r.startswith("-")]
+        m = re.match(r"(FAIL|ERROR): (\w+) \(([\w.]+)\)", rows[0]) if rows else None
+        if not m:
+            continue
+        # "ERROR: test_cli (unittest.loader._FailedTest.test_cli)" = the file did not import
+        module = m[2] if m[3].startswith("unittest.") else m[3].split(".")[0]
+        # Say what went wrong: the exception line, and where in src/ it happened,
+        # e.g. "SyntaxError: invalid syntax (ops.py line 4)".
+        errors = [r.strip() for r in rows if re.match(r"\w*(Error|Exception)\b", r.strip())]
+        error = errors[-1] if errors else ""
+        where = [re.search(r'/src/\w+/(\w+\.py)", line (\d+)', r) for r in rows]
+        where = [w for w in where if w]
+        at = f" ({where[-1][1]} line {where[-1][2]})" if where else ""
+        failing.setdefault(module, []).append(f"- {m[2]}: {error[:140]}{at}")
     # Test names only: a long failure dump pushes the 8b model into answering in text.
     summary = "\n".join(n for names in failing.values() for n in names[:8]) + "\n" + lines[-1]
     return ran - bad, summary, failing
@@ -374,8 +395,10 @@ def main():
     args = sys.argv[1:]
     if args[:1] == ["--compare"]:
         return compare(args[1], args[2])
+    routing = ROOT / "endpoints" / "config.yml"
+    before = routing.read_text() if routing.exists() else ""
     env = sync()
-    if not preflight(env):
+    if not preflight(env, routing.read_text() != before):
         return 1
     if "--check" in args:
         return 0
@@ -410,17 +433,27 @@ def main():
             results.append(run_stage(by_role["coders"], env))
             results[-1]["role"] += f" (fix {round_})"
             FIX = {}
-            now, _, _ = run_tests()
-            if now <= passing:
-                # Keep a fix only if it helps; a weaker attempt goes back out.
-                for m, text in before.items():
-                    m.write_text(text)
-                print(f"  fix rejected: {now} tests pass, not more than {passing}; previous code kept")
-                TEAM.append(("test run", f"Fix rejected ({now} passing, before {passing}); "
-                                         "previous code kept."))
+            # Judge each coder's new module on its own, so one bad rewrite cannot
+            # sink the other coder's good fix. Keep a module only if it helps.
+            after = {m: m.read_text() for m in modules}
+            for m, text in before.items():
+                m.write_text(text)
+            now, kept = passing, []
+            for m in modules:
+                if after[m] == before[m]:
+                    continue
+                m.write_text(after[m])
+                n, _, _ = run_tests()
+                if n > now:
+                    now, kept = n, kept + [m.name]
+                else:
+                    m.write_text(before[m])
+            if not kept:
+                print(f"  fix rejected: no rewrite raised the {passing} passing tests; previous code kept")
+                TEAM.append(("test run", f"Fix rejected (still {passing} passing); previous code kept."))
                 continue
-            print(f"  fix kept: {now} tests pass, up from {passing}")
-            TEAM.append(("test run", f"Fix kept: {now} tests pass, up from {passing}."))
+            print(f"  fix kept ({', '.join(kept)}): {now} tests pass, up from {passing}")
+            TEAM.append(("test run", f"Fix kept ({', '.join(kept)}): {now} tests pass, up from {passing}."))
             results.append(run_stage(by_role["tester"], env))
             results[-1]["role"] += f" (fix {round_})"
 

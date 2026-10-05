@@ -38,8 +38,8 @@ model_list:
       max_input_tokens: 32768
   - model_name: tester
     litellm_params:
-      model: openai/llama3.1:8b
-      api_base: http://host.docker.internal:11435/v1
+      model: openai/qwen2.5:3b
+      api_base: http://host.docker.internal:11434/v1
       api_key: ollama
       max_tokens: 4096
     model_info:

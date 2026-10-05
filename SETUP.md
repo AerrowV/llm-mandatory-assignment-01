@@ -70,8 +70,8 @@ This starts the LiteLLM proxy and OpenHands in Docker. The first time, it
 downloads them, so give it a few minutes. You should see four `[ok]` lines:
 
 ```
-  [ok] endpoint A qwen2.5:3b -> architect,techlead,docs
-  [ok] endpoint B llama3.1:8b -> coder-1,coder-2,tester,deploy-validator
+  [ok] endpoint A qwen2.5:3b -> architect,techlead,tester,docs
+  [ok] endpoint B llama3.1:8b -> coder-1,coder-2,deploy-validator
   [ok] litellm up
   [ok] openhands up
 ```
@@ -92,7 +92,7 @@ one starts:
 | 1 | architect | A | `docs/components.md`, `api.md`, `deployment.md`, `decisions.md`, `handoff.md` |
 | 2 | techlead | A | `tickets/list.md` and one file per ticket |
 | 3 | coder-1 and coder-2, at the same time | B | `ops.py` and `cli.py` in `workspace/demo-project/src/calc/`, each on its own git branch |
-| 4 | tester | B | runs the tests, writes `workspace/demo-project/QUALITY.md` |
+| 4 | tester | A | runs the tests, writes `workspace/demo-project/QUALITY.md` |
 | ↺ | fix rounds | B | if tests fail, the coders get the failures and their last attempt and try again (up to 2 rounds; a fix is kept only if more tests pass) |
 | 5 | docs | A | `workspace/demo-project/README.md` |
 | 6 | deploy-validator | B | runs `docker/validate.sh`, writes `docs/deployment-validation.md` |
