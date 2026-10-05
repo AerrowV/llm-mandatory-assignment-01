@@ -1,3 +1,5 @@
+
+
 def main(argv: list[str]) -> int:
     if len(argv) != 4:
         print(f"error: wrong number of arguments: {len(argv)}")

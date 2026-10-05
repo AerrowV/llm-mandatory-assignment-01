@@ -9,13 +9,22 @@ Standard library only.
 Four functions. Each takes two numbers and returns a number.
 
 ```python
-def add(a: float, b: float) -> float: ...
-def subtract(a: float, b: float) -> float: ...
-def multiply(a: float, b: float) -> float: ...
-def divide(a: float, b: float) -> float: ...
+def add(a: float, b: float) -> float:
+    ...
+
+def subtract(a: float, b: float) -> float:
+    ...
+
+def multiply(a: float, b: float) -> float:
+    ...
+
+def divide(a: float, b: float) -> float:
+    ...
 ```
 
 - `divide(a, 0)` raises `ValueError("cannot divide by zero")`.
+- Write normal Python: each function body on its own indented lines under
+  the `def`, never on the same line as the `def`.
 - `ops.py` must not import anything from `cli.py`.
 
 ## Module 2 — `src/calc/cli.py` (coder-2)
@@ -24,12 +33,16 @@ One function. Import the four operations with
 `from calc.ops import add, subtract, multiply, divide`.
 
 ```python
-def main(argv: list[str]) -> int: ...
+def main(argv: list[str]) -> int:
+    ...
 ```
 
-`argv` is the operation and two numbers, for example `["add", "2", "3"]`.
+`argv` is exactly three items: the operation and two numbers, for example
+`["add", "2", "3"]`. It does not include the program name, so check
+`len(argv) == 3`.
 
-- Print the result and return `0`. Print a whole number without a decimal
+- Convert both numbers with `float()`, call the operation, print the result
+  and return `0`. Print a whole number without a decimal
   point (`5`, not `5.0`); otherwise print it as is (`2.5`).
 - Wrong number of arguments, an unknown operation, or a value that is not a
   number: print a message starting with `error:` and return `2`.

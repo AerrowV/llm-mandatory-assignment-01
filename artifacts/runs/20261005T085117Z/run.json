@@ -1,0 +1,97 @@
+{
+  "started": "20261005T085117Z",
+  "routing": {
+    "A": {
+      "model": "qwen2.5:3b",
+      "roles": "architect,techlead,tester,docs,deploy-validator"
+    },
+    "B": {
+      "model": "llama3.1:8b",
+      "roles": "coder-1,coder-2"
+    }
+  },
+  "stages": [
+    {
+      "role": "architect",
+      "fr": "FR1",
+      "passed": true,
+      "seconds": 259,
+      "files": [
+        "docs/components.md",
+        "docs/api.md",
+        "docs/deployment.md",
+        "docs/decisions.md",
+        "docs/handoff.md"
+      ]
+    },
+    {
+      "role": "techlead",
+      "fr": "FR2",
+      "passed": true,
+      "seconds": 323,
+      "files": [
+        "tickets/list.md",
+        "tickets/001-ops.md",
+        "tickets/002-cli.md",
+        "tickets/003-testing.md"
+      ]
+    },
+    {
+      "role": "coders",
+      "fr": "FR3",
+      "passed": true,
+      "seconds": 128,
+      "files": [
+        "workspace/demo-project/src/calc/ops.py",
+        "workspace/demo-project/src/calc/cli.py"
+      ]
+    },
+    {
+      "role": "tester",
+      "fr": "FR4",
+      "passed": true,
+      "seconds": 29,
+      "files": [
+        "workspace/demo-project/QUALITY.md"
+      ]
+    },
+    {
+      "role": "coders (fix 1)",
+      "fr": "FR3",
+      "passed": true,
+      "seconds": 137,
+      "files": [
+        "workspace/demo-project/src/calc/ops.py",
+        "workspace/demo-project/src/calc/cli.py"
+      ]
+    },
+    {
+      "role": "coders (fix 2)",
+      "fr": "FR3",
+      "passed": true,
+      "seconds": 154,
+      "files": [
+        "workspace/demo-project/src/calc/ops.py",
+        "workspace/demo-project/src/calc/cli.py"
+      ]
+    },
+    {
+      "role": "docs",
+      "fr": "FR5",
+      "passed": true,
+      "seconds": 47,
+      "files": [
+        "workspace/demo-project/README.md"
+      ]
+    },
+    {
+      "role": "deploy-validator",
+      "fr": "FR6",
+      "passed": true,
+      "seconds": 22,
+      "files": [
+        "docs/deployment-validation.md"
+      ]
+    }
+  ]
+}
