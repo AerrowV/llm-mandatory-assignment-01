@@ -29,15 +29,8 @@ check "every published port is bound to 127.0.0.1" \
 echo "== 3. demo project"
 check "modules compile" python3 -m compileall -q $DEMO/src
 check "unit tests pass" bash -c "cd $DEMO && python3 -m unittest discover -s tests"
-check "server starts and answers /health" bash -c "
-  cd $DEMO && python3 run.py > /tmp/demo.log 2>&1 & pid=\$!
-  trap 'kill \$pid 2>/dev/null' EXIT
-  for _ in \$(seq 20); do
-    curl -fs http://127.0.0.1:8765/health && exit 0
-    kill -0 \$pid 2>/dev/null || { cat /tmp/demo.log; exit 1; }
-    sleep 0.5
-  done
-  exit 1"
+check "the CLI runs: run.py add 2 3 prints 5" \
+  bash -c "cd $DEMO && test \"\$(python3 run.py add 2 3)\" = 5"
 
 echo "== 4. running stack"
 check "litellm is healthy" curl -fs http://localhost:4000/health/liveliness

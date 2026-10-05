@@ -20,7 +20,8 @@ ROLES = {
     "docs": "05-documentation",
     "deploy-validator": "06-deployment",
 }
-WORKER_MODULE = {"coder-1": "storage.py", "coder-2": "server.py"}
+PACKAGE = "calc"   # the demo project's package: workspace/demo-project/src/calc
+WORKER_MODULE = {"coder-1": "ops.py", "coder-2": "cli.py"}
 
 
 def load_env():

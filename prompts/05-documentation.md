@@ -37,21 +37,20 @@ Create and maintain detailed documentation describing the code's core functional
 
 ## The task
 
-Document the todo API in `{{WORKDIR}}`. Base every statement on files you
-read, not on what a todo app usually does.
+Document the calculator in `{{WORKDIR}}`. Base every statement on files you
+read, not on what a calculator usually does.
 
-1. `file_editor` `view` on `{{WORKDIR}}/TASK.md` (the API contract), then on
+1. `file_editor` `view` on `{{WORKDIR}}/TASK.md` (the contract), then on
    `{{WORKDIR}}/run.py` (how it starts) and `{{WORKDIR}}/QUALITY.md` (what the
    tests found).
 
 2. `file_editor` `create` for `{{WORKDIR}}/README.md`, with the whole file as
    `file_text`. It does not exist yet. Use exactly these headings:
    `## Setup` (Python 3 standard library only, nothing to install),
-   `## Usage` (the start and test commands from `run.py`, then every route
-   from `TASK.md` with one `curl` example each),
-   `## Runbook` (start, stop, health check on `/health`, the `TODO_HOST` and
-   `TODO_PORT` settings),
-   `## Troubleshooting` (port in use, a 400 or 404 response, and the known
+   `## Usage` (each of the four operations with one `python3 run.py` example,
+   and the test command),
+   `## Runbook` (how to run it, the exit codes 0, 1 and 2 and what each means),
+   `## Troubleshooting` (an `error:` message, a wrong exit code, and the known
    failures from `QUALITY.md`).
 
 Do not edit any other file.

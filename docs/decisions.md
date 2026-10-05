@@ -1,14 +1,10 @@
 ### Architecture Decision Records
-- **Separate Model Servers**: Instead of having one server with two models, we decided to have two separate servers. This decision simplifies the system and makes it easier to manage and scale.
-- **Proxy for Routing**: We decided to use a proxy to route role names to the Ollama servers. This decision allows us to maintain a clean separation between the OpenHands agent server and the Ollama servers, and it also makes it easier to manage the system.
-- **Binding Ports**: We decided to bind every port to 127.0.0.1. This decision ensures that the system is tightly coupled and can be easily managed.
-- **Role Profiles**: Each role has its own profile, which makes it easier to manage and customize the behavior of each role.
+- **Separate Ollama Servers**: Decided to use two separate Ollama servers instead of one server with two models. This decision was made to ensure each model has its own dedicated server, which can improve performance and isolation.
+- **Proxy for Routing**: Decided to use a LiteLLM proxy to route role names to the Ollama servers. This decision was made to decouple the agent server from the Ollama servers, making it easier to manage and scale.
+- **Role Profiles**: Decided to give each role its own profile rather than a shared profile. This decision was made to ensure each role has its own configuration, which can improve flexibility and customization.
 
-### Handoff
-- **Components.md**: Describes the components and their responsibilities.
-- **API.md**: Defines the interface contracts for the system.
-- **Deployment.md**: Provides the deployment topology and constraints.
-- **Decisions.md**: Records the architecture decisions made.
-- **Handoff.md**: A summary of the produced documentation.
+### Consequences
+- **Separate Ollama Servers**: This decision means that each model will have its own dedicated server, which can improve performance and isolation. However, it also means that the system will have two separate servers, which may increase complexity and cost.
+- **Proxy for Routing**: This decision means that the agent server will need to communicate with the proxy, which may add complexity and introduce potential points of failure. However, it also means that the agent server can be managed independently of the Ollama servers.
+- **Role Profiles**: This decision means that each role will have its own configuration, which can improve flexibility and customization. However, it also means that the system will have more configuration options, which may increase complexity and the risk of configuration errors.
 
-The Tech Lead should read the documentation in the following order: Components.md, API.md, Deployment.md, Decisions.md, and Handoff.md.

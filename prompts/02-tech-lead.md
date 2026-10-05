@@ -32,8 +32,8 @@ Start by reading `{{WORKDIR}}/docs/handoff.md` and the other files in
 `{{WORKDIR}}/workspace/demo-project/README.md`: the tickets are about that
 project, so its actual contract is your input.
 
-The project is a todo HTTP API built by two coding workers. It has exactly two
-modules to implement - `src/todoapp/storage.py` and `src/todoapp/server.py` -
+The project is a small command-line calculator built by two coding workers. It
+has exactly two modules to implement - `src/calc/ops.py` and `src/calc/cli.py` -
 plus tests for them.
 
 If something is unclear, do not stall. Note the gap in
@@ -52,13 +52,13 @@ No number prefix on that one. A file called `003-list.md` is not the index and
 will not be found - the exact string "list.md" is the filename.
 
 Calls 2, 3 and 4 are the tickets. Those DO take a number prefix, so they are
-`001-storage.md`, `002-server.md`, `003-testing.md` under `{{WORKDIR}}/tickets/`.
+`001-ops.md`, `002-cli.md`, `003-testing.md` under `{{WORKDIR}}/tickets/`.
 
 Count your calls. Three files is not enough: two tickets plus an index still
 leaves the third ticket unwritten.
 
-The tickets must cover, at minimum: implementing `src/todoapp/storage.py`
-(001), implementing `src/todoapp/server.py` (002), and testing both (003).
+The tickets must cover, at minimum: implementing `src/calc/ops.py`
+(001), implementing `src/calc/cli.py` (002), and testing both (003).
 
 Every ticket needs all three of these, as headings in the file:
 
@@ -78,7 +78,7 @@ deliverable.
 
 - tool: `file_editor`
 - `command`: `create`
-- `path`: the absolute path, for example `{{WORKDIR}}/tickets/001-storage.md`
+- `path`: the absolute path, for example `{{WORKDIR}}/tickets/001-ops.md`
 - `file_text`: the entire ticket, in full, as one string
 
 One file per tool call. A relative path is rejected, so always pass the full

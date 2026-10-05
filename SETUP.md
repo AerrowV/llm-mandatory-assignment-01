@@ -1,6 +1,7 @@
 # Setup and Run Guide
 
-This project runs a small AI software team on your own computer. Six roles
+This project runs a small AI software team on your own computer. The team
+builds a tiny command-line calculator (`workspace/demo-project`) from a spec. Six roles
 (architect, tech lead, two coders, tester, docs writer, deploy checker) are
 OpenHands agents. They use two local model servers, so nothing goes to the
 cloud. They work as a team: they share a team chat, and when tests fail the
@@ -90,7 +91,7 @@ one starts:
 | --- | --- | --- | --- |
 | 1 | architect | A | `docs/components.md`, `api.md`, `deployment.md`, `decisions.md`, `handoff.md` |
 | 2 | techlead | A | `tickets/list.md` and one file per ticket |
-| 3 | coder-1 and coder-2, at the same time | B | `storage.py` and `server.py` in `workspace/demo-project/src/todoapp/`, each on its own git branch |
+| 3 | coder-1 and coder-2, at the same time | B | `ops.py` and `cli.py` in `workspace/demo-project/src/calc/`, each on its own git branch |
 | 4 | tester | B | runs the tests, writes `workspace/demo-project/QUALITY.md` |
 | ↺ | fix rounds | B | if tests fail, the coders get the failures and their last attempt and try again (up to 2 rounds; a fix is kept only if more tests pass) |
 | 5 | docs | A | `workspace/demo-project/README.md` |
@@ -114,7 +115,8 @@ those messages. At the end you get a summary like this:
 | What the roles said to each other | `artifacts/runs/<time>/team-chat.md` |
 | Pass/fail and time per stage | `artifacts/runs/<time>/run.json` |
 | Each coder's changes | `git diff main agent/coder-1` and `git diff main agent/coder-2` |
-| Run the demo app's tests yourself | `cd workspace/demo-project && python3 -m unittest discover -s tests` |
+| Try the calculator the agents built | `cd workspace/demo-project && python3 run.py add 2 3` |
+| Run its tests yourself | `cd workspace/demo-project && python3 -m unittest discover -s tests` |
 | Deployment checks on their own | `./docker/validate.sh` |
 
 ## Step 7 — Stop

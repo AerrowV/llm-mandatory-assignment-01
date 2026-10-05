@@ -1,13 +1,15 @@
-## Scope
+## 003-Test both
 
-This ticket covers the testing of the storage and server modules for the todo API.
+### Scope
 
-## Acceptance Criteria
+This ticket tests the `src/calc/ops.py` and `src/calc/cli.py` modules.
 
-1. The storage module should pass all tests.
-2. The server module should pass all tests.
+### Acceptance Criteria
 
-## Dependencies
+- The tests should cover all basic arithmetic operations and edge cases.
+- The tests should handle invalid inputs and missing arguments gracefully.
 
-- 001-storage
-- 002-server
+### Dependencies
+
+- 001-Implement ops.py
+- 002-Implement cli.py

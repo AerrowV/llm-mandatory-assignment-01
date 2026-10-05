@@ -21,7 +21,7 @@ import time
 import urllib.request
 from datetime import datetime, timezone
 
-from config import ROLES, ROOT, WORKER_MODULE, endpoint_of, sync
+from config import PACKAGE, ROLES, ROOT, WORKER_MODULE, endpoint_of, sync
 
 WORKDIR = "/opt/project"                 # the repo, as mounted in the container
 DEMO = "workspace/demo-project"
@@ -40,10 +40,10 @@ STAGES = [
      "files": ["docs/components.md", "docs/api.md", "docs/deployment.md",
                "docs/decisions.md", "docs/handoff.md"]},
     {"role": "techlead", "fr": "FR2",
-     "files": ["tickets/list.md", "tickets/001-storage.md", "tickets/002-server.md",
+     "files": ["tickets/list.md", "tickets/001-ops.md", "tickets/002-cli.md",
                "tickets/003-testing.md"]},
     {"role": "coders", "fr": "FR3", "workers": ["coder-1", "coder-2"],
-     "files": [f"{DEMO}/src/todoapp/storage.py", f"{DEMO}/src/todoapp/server.py"]},
+     "files": [f"{DEMO}/src/{PACKAGE}/{WORKER_MODULE[w]}" for w in ("coder-1", "coder-2")]},
     {"role": "tester", "fr": "FR4",
      "files": [f"{DEMO}/QUALITY.md"], "words": ["test result", "limitation"]},
     {"role": "docs", "fr": "FR5",
@@ -168,12 +168,12 @@ def listen(role, cid):
         print(f"  {role} says: {reply[:160]}")
 
 
-def nudge(cid, missing, env):
+def nudge(cid, missing, env, text=None):
     """Small models often paste a file into chat instead of writing it."""
     paths = "\n".join(f"- {WORKDIR}/{p}" for p in missing)
     api(f"/api/conversations/{cid}/events", {"role": "user", "run": True, "content": [{
         "type": "text",
-        "text": fill("shared/missing-files", PATHS=paths)}]})
+        "text": text or fill("shared/missing-files", PATHS=paths)}]})
     time.sleep(3)
     wait(cid, time.time() + int(env["STAGE_BUDGET"]))
 
@@ -191,10 +191,10 @@ def worktree(worker):
     made = git("worktree", "add", "--relative-paths", "-B", f"agent/{worker}", str(path))
     if made.returncode:
         raise SystemExit(f"git worktree add failed for {worker}: {made.stderr.strip()}")
-    module = path / DEMO / "src" / "todoapp" / WORKER_MODULE[worker]
+    module = path / DEMO / "src" / PACKAGE / WORKER_MODULE[worker]
     if FIX:  # in a fix round the worker starts from its own last attempt
         module.with_suffix(".py.prev").write_text(
-            (ROOT / DEMO / "src" / "todoapp" / WORKER_MODULE[worker]).read_text())
+            (ROOT / DEMO / "src" / PACKAGE / WORKER_MODULE[worker]).read_text())
     # file_editor `create` refuses to overwrite, so remove the file first.
     module.unlink(missing_ok=True)
     return f"{WORKDIR}/.worktrees/{worker}/{DEMO}"
@@ -203,7 +203,7 @@ def worktree(worker):
 def collect(worker):
     """Commit the worker's branch, then take only its own module into main."""
     path = ROOT / ".worktrees" / worker
-    module = f"{DEMO}/src/todoapp/{WORKER_MODULE[worker]}"
+    module = f"{DEMO}/src/{PACKAGE}/{WORKER_MODULE[worker]}"
     wrote = (path / module).exists()
     (path / f"{module}.prev").unlink(missing_ok=True)
     git("-C", str(path), "add", "-A")
@@ -223,12 +223,17 @@ def run_coders(stage, env):
 
     def work(w):
         cids[w] = run_agent(w, dirs[w], env)
-        module = f".worktrees/{w}/{DEMO}/src/todoapp/{WORKER_MODULE[w]}"
+        module = f".worktrees/{w}/{DEMO}/src/{PACKAGE}/{WORKER_MODULE[w]}"
         for _ in range(NUDGES):
             if (ROOT / module).exists():
                 break
             print(f"  [warn] {w} did not write its module; asking again")
-            nudge(cids[w], [module], env)
+            # Coders must read the spec (and their last attempt) before writing,
+            # or they write generic code from memory.
+            prev = (f"\n   Then `view` `{dirs[w]}/src/{PACKAGE}/{WORKER_MODULE[w]}.prev`, "
+                    "your previous version." if FIX else "")
+            nudge(cids[w], [module], env, fill(
+                "shared/missing-module", PATH=f"{WORKDIR}/{module}", WORKDIR=dirs[w], PREV=prev))
 
     threads = [threading.Thread(target=work, args=(w,)) for w in stage["workers"]]
     for t in threads:
@@ -314,9 +319,10 @@ def run_tests():
     bad = sum(int(n) for n in re.findall(r"(?:failures|errors)=(\d+)", lines[-1] if lines else ""))
     if out.returncode == 0:
         return ran, None
-    summary = "\n".join([l for l in lines if l.startswith(("FAIL:", "ERROR:", "AssertionError",
-                                                             "ModuleNotFoundError", "ImportError"))][:15]
-                        + lines[-1:])
+    # Test names only: a long failure dump pushes the 8b model into answering in text.
+    names = [re.sub(r" \(.*\)$", "", l) for l in lines if l.startswith(("FAIL:", "ERROR:"))]
+    imports = [l for l in lines if l.startswith(("ImportError", "ModuleNotFoundError"))]
+    summary = "\n".join(f"- {l}" for l in (names[:8] + imports[:2])) + "\n" + lines[-1]
     return ran - bad, summary
 
 

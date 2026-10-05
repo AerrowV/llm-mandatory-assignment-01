@@ -17,8 +17,9 @@
 ### OpenHands Conversation API
 | Method | Path | Parameters | Response | Errors |
 | --- | --- | --- | --- | --- |
-| POST | /v1/conversations | role_name, model_id, user_input | conversation_id, response | model_not_found, user_input_not_provided |
+| POST | /v1/conversations | role_name, model_id, user_input | conversation_id, response | conversation_not_found |
 | GET | /v1/conversations/{conversation_id} | conversation_id | conversation_id, response | conversation_not_found |
 | DELETE | /v1/conversations/{conversation_id} | conversation_id | conversation_id | conversation_not_found |
+| GET | /v1/conversations | role_name, model_id, user_input | conversation_id, response | conversation_not_found |
 
 Note: All paths are relative to the OpenAI-compatible endpoint.

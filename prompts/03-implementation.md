@@ -18,7 +18,7 @@ Your core objective is to run multiple coding workers.
 
 ## The task
 
-Replace the module at `{{WORKDIR}}/src/todoapp/{{MODULE}}`, which is currently
+Replace the module at `{{WORKDIR}}/src/calc/{{MODULE}}`, which is currently
 a stub raising `NotImplementedError`. The stub has been removed for you, so the
 file does not exist yet; you are creating its finished version.
 
@@ -26,7 +26,7 @@ Emit every action as a structured tool call. Never describe a tool call in
 text, never paste JSON into a message, and never write a plan or a summary:
 a turn that is not a tool call ends this run.
 
-The exact class name, the method signatures and the edge cases for `{{MODULE}}`
+The exact function names, signatures and edge cases for `{{MODULE}}`
 are in `{{WORKDIR}}/TASK.md` and nowhere else, so read that before you write.
 Guessing them is what fails this task.
 
@@ -38,11 +38,11 @@ you cannot write the file until you have read `TASK.md`.
 
 2. Write the finished file with the `file_editor` tool, `create` command, and
    the whole file as the `file_text` argument. `file_text` is every line of the
-   finished file: the full class with every method `TASK.md` lists for it, each
-   one implemented, none left as `...` or `pass`. `{{WORKDIR}}/src/todoapp/{{MODULE}}`
+   finished file: every function `TASK.md` lists for it, each
+   one implemented, none left as `...` or `pass`. `{{WORKDIR}}/src/calc/{{MODULE}}`
    does not exist yet, so `create` writes it in one call.
 
-3. Read `{{WORKDIR}}/src/todoapp/{{MODULE}}` back with the `file_editor` tool,
+3. Read `{{WORKDIR}}/src/calc/{{MODULE}}` back with the `file_editor` tool,
    `view` command, to confirm the write landed, then report which file you
    changed.
 
